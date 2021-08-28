@@ -60,7 +60,7 @@ namespace Persistence
                     manyToOne.TableReferenced = Tables[refTable];
                     tablePk.Columns.Where(c => c is PrimaryKey).Do(columnPk =>
                     {
-                        manyToOne.Links.Add((Field) columnPk);
+                        manyToOne.AddFk((Field) columnPk);
                     });
                     Sql.ValidadeForeignKeys(table,  manyToOne);
                 }
@@ -212,12 +212,11 @@ namespace Persistence
     public enum Cascade
     {
         NULL = 0x00,
-        PERSIST = 0x01,
-        MERGE = 0x02,
-        REMOVE = 0x04,
-        REFRESH = 0x08,
-        DETACH = 0x10,
-        ALL = PERSIST | MERGE | REMOVE | REFRESH | DETACH
+        SAVE = 0x01,
+        REMOVE = 0x02,
+        REFRESH = 0x04,
+        FREE = 0x08,
+        PERSIST = SAVE | REMOVE | REFRESH | FREE
     }
 
     public class RunLater

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Linq;
 using System.Reflection;
 
 namespace Persistence
@@ -23,6 +24,12 @@ namespace Persistence
             PrimaryKeys = new List<PrimaryKey>();
             ForeignKeys = new Dictionary<string, List<ManyToOne>>();
             _columns = new Dictionary<string, PropColumn>(StringComparer.InvariantCultureIgnoreCase);
+        }
+
+        public PropColumn TryGetColumn(string propName)
+        {
+            _columns.TryGetValue(propName, out var column);
+            return column;
         }
 
         public bool DefaultPk { get; internal set; } = true;
@@ -56,12 +63,15 @@ namespace Persistence
                 ForeignKeys.Add(tableRef, list);
             }
 
-            list.Add(new ManyToOne(manyToOne) {Prop = pi});
+            var col = new ManyToOne(manyToOne) {Prop = pi};
+            list.Add(col);
+            AddColumn(col);
         }
     }
 
     public class PropColumn
     {
+        public string SqlName { get; internal set; }
         public Table Table { get; internal set; }
         public PropertyInfo Prop { get; internal set; }
         protected internal bool Persisted { get; internal set; }
@@ -81,12 +91,12 @@ namespace Persistence
     public class ManyToOne : PropColumn
     {
         private readonly ManyToOneAttribute _m2o;
-        public readonly List<Field> Links;
+        public readonly Dictionary<string,Field> Links;
         public string FkName => GetFkName();
         public Cascade Cascade { get; }
         public Fetch Fetch { get; }
 
-        public Table TableReferenced;
+        public Table TableReferenced { get; internal set; }
 
         public ManyToOne(ManyToOneAttribute m2o)
         {
@@ -94,13 +104,7 @@ namespace Persistence
             Nullable = m2o.Nullable;
             Cascade = m2o.Cascade;
             Fetch = m2o.Fetch;
-            Links = new List<Field>();
-        }
-
-
-        public string FieldFkName(Field f)
-        {
-            return $"{TableReferenced.SqlName}_{f.SqlName}";
+            Links = new Dictionary<string, Field>();
         }
 
         private string GetFkName()
@@ -109,9 +113,14 @@ namespace Persistence
             if (!string.IsNullOrEmpty(_m2o.ReferencedName))
                 name += $"_{_m2o.ReferencedName}";
             if (Links.Count == 1)
-                name += $"_{Links[0].SqlName}";
+                name += $"_{Links.Values.First().SqlName}";
             return name;
 
+        }
+
+        public void AddFk(Field field)
+        {
+            Links.Add($"{TableReferenced.SqlName}_{field.SqlName}", field);
         }
     }
 
@@ -147,7 +156,6 @@ namespace Persistence
     public class Field : PropColumn
     {
         protected readonly FieldAttribute Attribute;
-        public string SqlName { get; internal set; }
         public SqlDbType SqlType { get; internal set; }
         public int Precision { get; }
         public int Length { get; }

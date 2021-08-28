@@ -1,11 +1,25 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Reflection;
 
 namespace Persistence
 {
     public static class CollectionExtension
     {
+        
+        public static object Read(this IDataRecord data, string field)
+        {
+            try
+            {
+                var value = data[field];
+                return value is DBNull ? null : value;
+            }
+            catch
+            {
+                return null;
+            }
+        }
         public static void SetSqlValue(this PropertyInfo propertyInfo, DAO dao, object obj)
         {
             propertyInfo.SetValue(dao, obj);

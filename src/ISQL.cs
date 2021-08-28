@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Data.Common;
 
 namespace Persistence
@@ -23,6 +24,8 @@ namespace Persistence
         protected internal bool ValidadeForeignKeys(Table table, ManyToOne manyToOne);
         protected internal string ConvertValueToString(object value);
         protected internal long InsertOrUpdate(Table table, Dictionary<string, object> fields);
+        protected internal long Update(Table table, Dictionary<string, object> fields,
+            Dictionary<PropColumn, object> keys);
         protected internal DbDataReader Select(Table table, Dictionary<string, object> keys);
         protected internal DbDataReader Select(Table table, Dictionary<string, object> keys, long first, long count);
         protected internal bool Delete(Table table, Dictionary<string, object> keys);
@@ -31,5 +34,6 @@ namespace Persistence
         protected internal bool ExistTrigger(Table table, string triggerName);
         protected internal void CreateTrigger(Table table, string sqlTrigger, string triggerName,
             SqlTriggerType sqlTriggerType);
+        protected internal DbDataReader SelectWhereQuery(Table table, string likeQuery);
     }
 }
