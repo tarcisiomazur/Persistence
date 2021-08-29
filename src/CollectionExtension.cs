@@ -5,9 +5,8 @@ using System.Reflection;
 
 namespace Persistence
 {
-    public static class CollectionExtension
+    internal static class CollectionExtension
     {
-        
         public static object Read(this IDataRecord data, string field)
         {
             try

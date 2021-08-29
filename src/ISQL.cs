@@ -1,6 +1,4 @@
-using System;
 using System.Collections.Generic;
-using System.Data;
 using System.Data.Common;
 
 namespace Persistence
@@ -21,7 +19,7 @@ namespace Persistence
         protected internal DbDataReader LoadTable(Table table);
         protected internal bool ValidateField(Table table, Field field);
         protected internal bool ValidatePrimaryKeys(Table table, List<PrimaryKey> primaryKeys);
-        protected internal bool ValidadeForeignKeys(Table table, ManyToOne manyToOne);
+        protected internal bool ValidadeForeignKeys(Table table, Relationship relationship);
         protected internal string ConvertValueToString(object value);
         protected internal long InsertOrUpdate(Table table, Dictionary<string, object> fields);
         protected internal long Update(Table table, Dictionary<string, object> fields,

@@ -16,13 +16,13 @@ namespace Persistence
         private readonly TableAttribute _tableAttribute;
         protected internal Dictionary<string, PropColumn>.ValueCollection Columns => _columns.Values;
         protected internal readonly List<PrimaryKey> PrimaryKeys;
-        protected internal readonly Dictionary<string, List<ManyToOne>> ForeignKeys;
+        protected internal readonly Dictionary<string, List<Relationship>> Relationships;
 
         public Table(TableAttribute tableAttribute)
         {
             _tableAttribute = tableAttribute;
             PrimaryKeys = new List<PrimaryKey>();
-            ForeignKeys = new Dictionary<string, List<ManyToOne>>();
+            Relationships = new Dictionary<string, List<Relationship>>();
             _columns = new Dictionary<string, PropColumn>(StringComparer.InvariantCultureIgnoreCase);
         }
 
@@ -53,19 +53,27 @@ namespace Persistence
             AddColumn(primaryKey);
         }
 
-        public void AddForeignKey(ManyToOneAttribute manyToOne, PropertyInfo pi)
+        public void AddRelationship(PropertyInfo pi, string tableRef, ManyToOneAttribute manyToOne = null)
         {
-            var tableRef = pi.PropertyType.Name;
-            ForeignKeys.TryGetValue(tableRef, out var list);
+            Relationships.TryGetValue(tableRef, out var list);
             if (list == null)
             {
-                list = new List<ManyToOne>();
-                ForeignKeys.Add(tableRef, list);
+                list = new List<Relationship>();
+                Relationships.Add(tableRef, list);
             }
 
-            var col = new ManyToOne(manyToOne) {Prop = pi};
+            Relationship col;
+            if (manyToOne != null)
+            {
+                col = new Relationship(manyToOne) { Prop = pi, Type = RelationshipType.ManyToOne };
+                AddColumn(col);
+            }
+            else
+            {
+                col = new Relationship { Type = RelationshipType.Specialization };
+            }
+
             list.Add(col);
-            AddColumn(col);
         }
     }
 
@@ -86,39 +94,50 @@ namespace Persistence
         {
         }
     }
-
-
-    public class ManyToOne : PropColumn
+    
+    public class Relationship : PropColumn
     {
-        private readonly ManyToOneAttribute _m2o;
         public readonly Dictionary<string,Field> Links;
+        public RelationshipType Type { get; set; }
         public string FkName => GetFkName();
         public Cascade Cascade { get; }
         public Fetch Fetch { get; }
-
+        
+        public FkOptions OnDelete { get; }
+        public FkOptions OnUpdate { get; }
+        
+        public string ReferencedName { get; }
         public Table TableReferenced { get; internal set; }
 
-        public ManyToOne(ManyToOneAttribute m2o)
+        public Relationship(ManyToOneAttribute m2o)
         {
-            _m2o = m2o;
+            ReferencedName = m2o.ReferencedName;
             Nullable = m2o.Nullable;
             Cascade = m2o.Cascade;
             Fetch = m2o.Fetch;
+            Links = new Dictionary<string, Field>();
+        }
+        public Relationship()
+        {
+            Nullable = Nullable.NotNull;
+            Cascade = Cascade.NULL;
+            Fetch = Fetch.Eager;
+            OnUpdate = FkOptions.CASCADE;
             Links = new Dictionary<string, Field>();
         }
 
         private string GetFkName()
         {
             var name = $"fk_{Table.SqlName}_{TableReferenced.SqlName}";
-            if (!string.IsNullOrEmpty(_m2o.ReferencedName))
-                name += $"_{_m2o.ReferencedName}";
+            if (!string.IsNullOrEmpty(ReferencedName))
+                name += $"_{ReferencedName}";
             if (Links.Count == 1)
                 name += $"_{Links.Values.First().SqlName}";
             return name;
 
         }
 
-        public void AddFk(Field field)
+        public void AddKey(Field field)
         {
             Links.Add($"{TableReferenced.SqlName}_{field.SqlName}", field);
         }
@@ -141,6 +160,7 @@ namespace Persistence
         {
             Nullable = Nullable.NotNull;
             AutoIncrement = attribute.AutoIncrement;
+            DefaultValue = attribute.DefaultValue;
         }
 
         public PrimaryKey(PrimaryKey defaultPkColumn) : base(defaultPkColumn.Attribute)
@@ -148,6 +168,7 @@ namespace Persistence
             Prop = defaultPkColumn.Prop;
             Nullable = Nullable.NotNull;
             AutoIncrement = defaultPkColumn.AutoIncrement;
+            DefaultValue = defaultPkColumn.DefaultValue;
         }
 
         public bool AutoIncrement { get; }
