@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
-using System.Data.Common;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -13,6 +12,7 @@ namespace Persistence
 {
     public class DAO
     {
+        internal static bool Init() => true;
         private Dictionary<PropColumn, object> LastKeys;
         private Table __table => Persistence.Tables[GetType().Name];
         private Storage _storage => Persistence.Storage[__table];
@@ -33,6 +33,11 @@ namespace Persistence
         public bool Save() => Save(__table);
         public bool Persist() => Persist(__table);
         public bool Delete() => Delete(GetType());
+
+        static DAO()
+        {
+            Persistence.BuildTables();
+        }
 
         protected DAO()
         {
@@ -103,7 +108,7 @@ namespace Persistence
                 switch (column)
                 {
                     case Relationship rel:
-                        var obj = (DAO)Activator.CreateInstance(rel.Prop.PropertyType);
+                        var dao = (DAO)Activator.CreateInstance(rel.Prop.PropertyType);
                         var isNull = false;
                         foreach (var (name, fk) in rel.Links)
                         {
@@ -114,19 +119,21 @@ namespace Persistence
                                 break;
                             }
 
-                            fk.Prop.SetSqlValue(obj, value);
+                            fk.Prop.SetSqlValue(dao, value);
                         }
 
                         if (isNull) continue;
 
                         if (rel.Fetch == Fetch.Eager)
-                            runLater.Later(() => obj.Load());
+                            runLater.Later(() => dao.Load());
                         else
-                            obj._NotLoaded = true;
-                        rel.Prop.SetValue(this, obj);
+                            dao._NotLoaded = true;
+                        rel.Prop.SetValue(this, dao);
                         break;
                     case OneToMany o2m:
-                        runLater.Later(10, () => ((IPList)o2m.Prop.GetValue(this))?.LoadList(o2m));
+                        var obj = (IPList) Activator.CreateInstance(o2m.Prop.PropertyType);
+                        o2m.Prop.SetValue(this,obj);
+                        runLater.Later(10, () => obj.LoadList(o2m, this));
                         break;
                     case Field field:
                         value = reader.Read(field.SqlName);
@@ -179,6 +186,7 @@ namespace Persistence
 
         private bool Save(Table table)
         {
+            var later = new RunLater();
             if (table.IsSpecialization && !Save(table.BaseTable))
                 return false;
             var fields = new Dictionary<string, object>();
@@ -210,18 +218,28 @@ namespace Persistence
                     case Field fa:
                         fields.Add(fa.SqlName, obj);
                         break;
-                    case Relationship manyToOne:
+                    case Relationship relationship:
                         var dao = (DAO)obj;
                         if (obj == null)
-                            if (manyToOne.Nullable == Nullable.NotNull)
-                                throw new PersistenceException($"Property value {manyToOne.Prop} cannot be null");
+                            if (relationship.Nullable == Nullable.NotNull)
+                                throw new PersistenceException($"Property value {relationship.Prop} cannot be null");
                             else
                                 continue;
-                        if (manyToOne.Cascade.HasFlag(Cascade.SAVE) && dao.Loaded && !dao.Save())
+                        if (relationship.Cascade.HasFlag(Cascade.SAVE) && dao.Loaded && !dao.Save())
                             continue;
-                        foreach (var (name, fk) in manyToOne.Links)
+                        foreach (var (name, fk) in relationship.Links)
                             fields.Add(name, fk.Prop.GetValue(obj));
+                        break;
+                    case OneToMany list:
+                        if (!list.Cascade.HasFlag(Cascade.SAVE)) break;
+                        var l = obj as IPList;
+                        foreach (var o in l)
+                        {
+                            if(o != null)
+                                list.Relationship.Prop.SetValue(o,this);
+                        }
 
+                        later.Later(() => l.Save());
                         break;
                 }
             }
@@ -240,11 +258,10 @@ namespace Persistence
                     return false;
                 throw new PersistenceException($"Error on save object {ToString()}", ex);
             }
-
-            Console.WriteLine(res);
+            
             if (res == -1) return false;
-
             UpdateIdentifiers(table, res);
+            later.Run();
             return true;
 
         }

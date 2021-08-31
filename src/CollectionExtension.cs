@@ -1,11 +1,13 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Data;
+using System.Linq;
 using System.Reflection;
 
 namespace Persistence
 {
-    internal static class CollectionExtension
+    internal static class InternalCollectionExtension
     {
         public static object Read(this IDataRecord data, string field)
         {
@@ -42,5 +44,29 @@ namespace Persistence
                 dict[key] = value;
             }
         }
+        
     }
+
+    public static class CollectionExtension
+    {
+        public static bool Like(this string str, string pattern,
+            StringComparison cmp = StringComparison.CurrentCultureIgnoreCase)
+        {
+            var split = (IEnumerator<string>) pattern.Split("%").ToList().GetEnumerator();
+            if (!split.MoveNext()) return false;
+            var current = split.Current;
+            var offset = str.IndexOf(current??"", cmp);
+            if (offset != 0) return false;
+            
+            while(split.MoveNext())
+            {
+                current = split.Current;
+                offset = str.IndexOf(current??"", offset, cmp);
+                if (offset == -1) return false;
+            }
+
+            return current == "" || offset+current?.Length == str.Length;
+        }
+    }
+    
 }

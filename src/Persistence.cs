@@ -20,17 +20,22 @@ namespace Persistence
             DefaultPkColumn = new PrimaryKey(prop.GetCustomAttribute<PrimaryKeyAttribute>()) { Prop = prop};
         }
 
+        internal static void BuildTables()
+        {
+            foreach (var type in
+                from assembly in AppDomain.CurrentDomain.GetAssemblies()
+                from type in assembly.GetTypes()
+                where type.IsSubclassOf(typeof(DAO)) && type.GetCustomAttribute<TableAttribute>() != null
+                select type)
+            {
+                Init(type);
+            }
+        }
+
         public static void Init(ISQL sql)
         {
+            DAO.Init();
             Sql = sql;
-            foreach (var type in new StackTrace().GetFrame(1)?.GetMethod()?.ReflectedType?.Assembly?.GetTypes())
-            {
-                if (type.GetCustomAttribute<TableAttribute>() != null)
-                {
-                    Init(type);
-                }
-            }
-
             Tables.Values.Do(ProcessPkAndFields);
             Tables.Values.Do(ProcessForeignKeys);
             Tables.Values.Do(ProcessOneToMany);
@@ -42,7 +47,7 @@ namespace Persistence
             {
                 col.ReferencedName ??= col.Type.Name;
                 var refTable = Tables[col.Type.Name];
-                if (!refTable.Relationships.TryGetValue(col.ReferencedName, out var rel) && rel != null)
+                if (!refTable.Relationships.TryGetValue(table.Name, out var rel) && rel == null)
                     throw new PersistenceException(
                         $"Error on auto get relationship to persist property OneToMany {col.Prop}");
                 col.Relationship = rel;

@@ -9,16 +9,27 @@ using System.Linq;
 
 namespace Persistence
 {
-    internal interface IPList
+    public static class PListLinq
+    {
+        public static PList<T> ToPList<T>(this IEnumerable<T> sequence) where T:DAO
+        {
+            return new PList<T>(sequence);
+        }
+
+    }
+
+    internal interface IPList: IList
     {
         protected void SetKey(string key, object value);
         protected Type GetMemberType();
-        protected internal void LoadList(OneToMany oneToMany);
+        protected internal void LoadList(OneToMany oneToMany, DAO obj);
+        public bool Save();
     }
     
-    public sealed class PList<T> : List<T>, IList, IPList, INotifyCollectionChanged where T : DAO
+    public sealed class PList<T> : List<T>, IPList, INotifyCollectionChanged where T : DAO
     {
-        private List<Field> _foreignKey = new List<Field>();
+        private Relationship _relationship;
+        private DAO _root;
         private List<T> _toDelete = new List<T>();
         private long _length;
         private long _first;
@@ -443,12 +454,15 @@ namespace Persistence
         }
 
 
-        void IPList.LoadList(OneToMany oneToMany)
+        void IPList.LoadList(OneToMany oneToMany, DAO obj)
         {
-            var type = typeof(T);
-            var table = Persistence.Tables[type.Name];
-            _length = Persistence.Sql.SelectCount(table, null);
             Clear();
+            _relationship = oneToMany.Relationship;
+            _root = obj;
+            if (oneToMany.Fetch == Fetch.Eager)
+            {
+                Load();
+            }
         }
 
         public event NotifyCollectionChangedEventHandler CollectionChanged;
@@ -491,6 +505,18 @@ namespace Persistence
         {
             if (!value.Delete()) return false;
             Remove(value);
+            return true;
+        }
+
+        public bool Load()
+        {
+            var whereClause = "";
+            foreach (var (key, field) in _relationship.Links)
+            {
+                whereClause += $"{key} = {field.Prop.GetValue(_root)}";
+            }
+            var reader = Persistence.Sql.SelectWhereQuery(_table, whereClause);
+            BuildList(reader);
             return true;
         }
 
