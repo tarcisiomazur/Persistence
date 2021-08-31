@@ -54,6 +54,7 @@ namespace Persistence
         REMOVE = 0x02,
         REFRESH = 0x04,
         FREE = 0x08,
-        PERSIST = SAVE | REMOVE | REFRESH | FREE
+        ALL = SAVE | REMOVE | REFRESH | FREE,
+        PERSIST = 0x16 | ALL
     }
 }

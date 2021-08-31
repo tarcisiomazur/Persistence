@@ -3,34 +3,41 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 
 namespace Persistence
 {
-    internal interface IMyList
+    internal interface IPList
     {
         protected void SetKey(string key, object value);
         protected Type GetMemberType();
         protected internal void LoadList(OneToMany oneToMany);
     }
     
-    public sealed class MyList<T> : List<T>, IList, IMyList, INotifyCollectionChanged where T : DAO
+    public sealed class PList<T> : List<T>, IList, IPList, INotifyCollectionChanged where T : DAO
     {
         private List<Field> _foreignKey = new List<Field>();
+        private List<T> _toDelete = new List<T>();
         private long _length;
         private long _first;
         private long _last;
+        private readonly Table _table;
+        private readonly Type _type;
         public long Length => _length;
 
-        public MyList()
+        public PList()
         {
+            _type = typeof(T);
+            _table = Persistence.Tables[_type.Name];
         }
 
         // Constructs a List with a given initial capacity. The list is
         // initially empty, but will have room for the given number of elements
         // before any reallocations are required.
         // 
-        public MyList(int capacity): base(capacity)
+        public PList(int capacity): base(capacity)
         {
         }
 
@@ -38,7 +45,7 @@ namespace Persistence
         // size and capacity of the new list will both be equal to the size of the
         // given collection.
         // 
-        public MyList(IEnumerable<T> collection): base(collection)
+        public PList(IEnumerable<T> collection): base(collection)
         {
             
         } 
@@ -62,6 +69,7 @@ namespace Persistence
         public new void Add(T item)
         {
             base.Add(item);
+            _length ++;
         }
 
         int IList.Add(object? item)
@@ -424,18 +432,18 @@ namespace Persistence
         }
 
         
-        void IMyList.SetKey(string key, object value)
+        void IPList.SetKey(string key, object value)
         {
             
         }
 
-        Type IMyList.GetMemberType()
+        Type IPList.GetMemberType()
         {
             return typeof(T);
         }
 
 
-        void IMyList.LoadList(OneToMany oneToMany)
+        void IPList.LoadList(OneToMany oneToMany)
         {
             var type = typeof(T);
             var table = Persistence.Tables[type.Name];
@@ -444,5 +452,52 @@ namespace Persistence
         }
 
         public event NotifyCollectionChangedEventHandler CollectionChanged;
+
+        public void BuildList(DbDataReader reader)
+        {
+            Clear();
+            try
+            {
+                RunLater runLater = null;
+                while (reader.Read())
+                {
+                    var instance = Activator.CreateInstance<T>();
+                    instance.Build(reader, _table, out runLater);
+                    Add(instance);
+                }
+
+                reader.Close();
+                runLater?.Run();
+            }
+            catch (Exception ex)
+            {
+                throw new PersistenceException("Error on Build List", ex);
+            }
+
+        }
+
+        public bool Save()
+        {
+            return this.All(dao => dao.Save());
+        }
+        
+        public bool Delete(int index)
+        {
+            if (this[index].Delete()) return false;
+            RemoveAt(index);
+            return true;
+        }
+        public bool Delete(T value)
+        {
+            if (!value.Delete()) return false;
+            Remove(value);
+            return true;
+        }
+
+        public bool DeleteAll()
+        {
+            RemoveAll(dao => dao.Delete());
+            return _length == 0;
+        }
     }
 }

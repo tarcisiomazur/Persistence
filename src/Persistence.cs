@@ -4,16 +4,14 @@ using System.Data;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
-using Priority_Queue;
 
 namespace Persistence
 {
-    public class Persistence
+    public static class Persistence
     {
-        protected internal static readonly Dictionary<string, Table> Tables = new Dictionary<string, Table>();
-        protected internal static readonly Dictionary<Table, Storage> Storage = new Dictionary<Table, Storage>();
-        protected internal static ISQL Sql;
-
+        internal static readonly Dictionary<string, Table> Tables = new Dictionary<string, Table>();
+        internal static readonly Dictionary<Table, Storage> Storage = new Dictionary<Table, Storage>();
+        internal static ISQL Sql;
         internal static readonly PrimaryKey DefaultPkColumn;
 
         static Persistence()
@@ -33,43 +31,57 @@ namespace Persistence
                 }
             }
 
-            Tables.Values.Do(Persist);
+            Tables.Values.Do(ProcessPkAndFields);
             Tables.Values.Do(ProcessForeignKeys);
+            Tables.Values.Do(ProcessOneToMany);
+        }
 
+        private static void ProcessOneToMany(Table table)
+        {
+            foreach (var col in table.Columns.OfType<OneToMany>())
+            {
+                col.ReferencedName ??= col.Type.Name;
+                var refTable = Tables[col.Type.Name];
+                if (!refTable.Relationships.TryGetValue(col.ReferencedName, out var rel) && rel != null)
+                    throw new PersistenceException(
+                        $"Error on auto get relationship to persist property OneToMany {col.Prop}");
+                col.Relationship = rel;
+                col.Persisted = true;
+            }
         }
 
         private static void ProcessForeignKeys(Table table)
         {
-            foreach (var (refTable, list) in table.Relationships)
+            foreach (var (name, relationship) in table.Relationships)
             {
-                foreach (var relationship in list)
+                var tablePkName = name;
+                if(relationship.Type != RelationshipType.Specialization)
                 {
-                    if (!Tables.TryGetValue(refTable, out var tablePk))
-                    {
-                        throw new PersistenceException(
-                            $"Property {relationship.Prop.Name} of table {table.Type} depends on table {refTable} to be persisted");
-                    }
-
-                    relationship.Table = table;
-                    relationship.TableReferenced = Tables[refTable];
-                    tablePk.PrimaryKeys.Do(columnPk => relationship.AddKey(columnPk));
-                    Sql.ValidadeForeignKeys(table, relationship);
+                    tablePkName = relationship.Prop.Name;
                 }
+                if (!Tables.TryGetValue(tablePkName, out var tablePk))
+                {
+                    throw new PersistenceException(
+                        $"Property {relationship.Prop.Name} of table {table.Type} depends on table {tablePkName} to be persisted");
+                }
+
+                relationship.Table = table;
+                relationship.TableReferenced = tablePk;
+                tablePk.PrimaryKeys.Do(columnPk => relationship.AddKey(columnPk));
+                Sql.ValidadeForeignKeys(table, relationship);
             }
         }
 
-        private static void Persist(Table table)
+        private static void ProcessPkAndFields(Table table)
         {
+            if (table.Versioned)
+                BuildVersionedField(table);
+            if (table.IsSpecialization)
+                table.BaseTable = Tables[table.Type.BaseType.Name];
+
             var columns = table.Columns;
             Sql.ValidatePrimaryKeys(table, table.PrimaryKeys);
             table.PrimaryKeys.Do(pk => pk.Persisted = true);
-
-            foreach (var column in columns.Where(c => c is OneToMany))
-            {
-                var col = (OneToMany)column;
-                col.PrimaryKeys = table.PrimaryKeys;
-                col.Persisted = true;
-            }
 
             foreach (var column1 in columns.Where(column =>
                 column is Field { Persisted: false } && !(column is PrimaryKey)))
@@ -79,8 +91,6 @@ namespace Persistence
                 column.Persisted = true;
             }
 
-            if (table.Versioned)
-                BuildVersionedField(table);
             Storage.Add(table, new Storage(table.DefaultPk));
         }
 
@@ -169,15 +179,14 @@ namespace Persistence
 
                         break;
                     case OneToManyAttribute oneToMany:
-                        if (pi.PropertyType.GetInterfaces().Contains(typeof(IMyList)))
+                        if (pi.PropertyType.GetInterfaces().Contains(typeof(IPList)))
                         {
                             table.AddColumn(new OneToMany(oneToMany) { Prop = pi });
-                            Console.WriteLine("MyList OK");
                         }
                         else
                         {
                             throw new PersistenceException(
-                                "The property type for using the OneToMany attribute must be " + typeof(MyList<>).Name);
+                                "The property type for using the OneToMany attribute must be " + typeof(PList<>).Name);
                         }
 
                         break;

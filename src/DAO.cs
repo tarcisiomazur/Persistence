@@ -7,86 +7,70 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using JetBrains.Annotations;
-using MySql.Data.MySqlClient;
 using Type = System.Type;
+
 namespace Persistence
 {
     public class DAO
     {
-        private long _id { get; set; } = long.MinValue;
-
         private Dictionary<PropColumn, object> LastKeys;
-        
+        private Table __table => Persistence.Tables[GetType().Name];
+        private Storage _storage => Persistence.Storage[__table];
         private long _Version;
-        
+        private long _id;
+        private bool _NotLoaded { get; set; }
+        private bool Loaded => !_NotLoaded;
         public event PropertyChangedEventHandler PropertyChanged;
 
-        [DefaultPk("Id", SqlDbType.BigInt, AutoIncrement = true, DefaultValue = long.MinValue)]
+        [DefaultPk("Id", SqlDbType.BigInt, AutoIncrement = true, DefaultValue = 0)]
         public long Id
         {
             get => _id;
             set => UpdateId(value);
         }
 
+        public bool Load() => Load(__table);
+        public bool Save() => Save(__table);
+        public bool Persist() => Persist(__table);
+        public bool Delete() => Delete(GetType());
 
-        private Table __table => Persistence.Tables[GetType().Name];
-        private Storage _storage => Persistence.Storage[__table];
-        
         protected DAO()
         {
             LastKeys = new Dictionary<PropColumn, object>();
             ctor(GetType());
         }
-        
-        
+
         private void ctor(Type type)
         {
-            if(type.BaseType != typeof(DAO))
+            if (type.BaseType != typeof(DAO))
                 ctor(type.BaseType);
-            
+
             var table = Persistence.Tables[type.Name];
-            foreach (var col in table.Columns)
+            foreach (var col in table.Columns.OfType<PrimaryKey>())
             {
-                switch (col)
-                {
-                    case PrimaryKey pk:
-                        LastKeys.Add(col, null);
-                        break;
-                    case OneToMany oneToMany:
-                    {
-                        col.Prop.SetValue(this, Activator.CreateInstance(col.Prop.PropertyType));
-                        break;
-                    }
-                    case Relationship manyToOne:
-                    {
-                        //TODO Posso deixar != null?
-                        //col.Prop.SetValue(this, Activator.CreateInstance(pi.PropertyType));
-                        break;
-                    }
-                }
+                LastKeys.Add(col, null);
             }
         }
-        
+
         private void UpdateId(long value)
         {
             _id = value;
         }
-        
-        public bool Delete()
+
+        private bool Delete(Type type)
         {
-            var table = Persistence.Tables[GetType().Name];
+            var table = Persistence.Tables[type.Name];
             var keys = new Dictionary<string, object>();
             foreach (var column in table.Columns.Where(column => column is PrimaryKey))
             {
                 var value = column.Prop.GetValue(this);
-                keys.Add(((PrimaryKey) column).SqlName, value);
+                keys.Add(((PrimaryKey)column).SqlName, value);
             }
-            
-            Persistence.Sql.Delete(table, keys);
-            return false;
+
+            return Persistence.Sql.Delete(table, keys);
         }
-        
-        public static T Load<T>(long id) where T:DAO
+
+        public static T Load<T>(long id) where T : DAO
         {
             var obj = Activator.CreateInstance<T>();
             obj.Id = id;
@@ -96,27 +80,30 @@ namespace Persistence
 
         private static object Load(long id, Type t)
         {
-            var obj = (DAO) Activator.CreateInstance(t);
+            var obj = (DAO)Activator.CreateInstance(t);
             obj?.Load();
             return obj;
         }
 
-        private void Build(IDataRecord reader, Table table, out RunLater runLater)
+        internal void Build(IDataRecord reader, Table table, out RunLater runLater)
         {
             runLater = new RunLater();
             object value;
             if (table.Versioned)
             {
                 value = reader.Read("__Version");
-                _Version = (long) (value??0);
+                _Version = (long)(value ?? 0);
             }
-            
+
+            if (table.IsSpecialization)
+                runLater.Later(() => Load(table.BaseTable));
+
             foreach (var column in table.Columns)
             {
                 switch (column)
                 {
                     case Relationship rel:
-                        var obj = (DAO) Activator.CreateInstance(rel.Prop.PropertyType);
+                        var obj = (DAO)Activator.CreateInstance(rel.Prop.PropertyType);
                         var isNull = false;
                         foreach (var (name, fk) in rel.Links)
                         {
@@ -126,6 +113,7 @@ namespace Persistence
                                 isNull = true;
                                 break;
                             }
+
                             fk.Prop.SetSqlValue(obj, value);
                         }
 
@@ -133,11 +121,12 @@ namespace Persistence
 
                         if (rel.Fetch == Fetch.Eager)
                             runLater.Later(() => obj.Load());
-
+                        else
+                            obj._NotLoaded = true;
                         rel.Prop.SetValue(this, obj);
                         break;
                     case OneToMany o2m:
-                        runLater.Later(10, () => ((IMyList) o2m.Prop.GetValue(this))?.LoadList(o2m));
+                        runLater.Later(10, () => ((IPList)o2m.Prop.GetValue(this))?.LoadList(o2m));
                         break;
                     case Field field:
                         value = reader.Read(field.SqlName);
@@ -147,6 +136,8 @@ namespace Persistence
                         break;
                 }
             }
+
+            _NotLoaded = false;
         }
 
         public void Free()
@@ -154,21 +145,20 @@ namespace Persistence
             _storage.Free(this);
         }
 
-        public bool Load()
+        private bool Persist(Table table)
         {
-            return Load(GetType());
+            return Save(table) && Load(table);
         }
 
-        private bool Load(Type type)
+        private bool Load(Table table)
         {
-            var table = Persistence.Tables[type.Name];
             var keys = table.PrimaryKeys.ToDictionary(pk => pk.SqlName, pk => pk.Prop.GetValue(this));
             try
             {
                 var reader = Persistence.Sql.Select(table, keys);
                 if (reader.Read())
                 {
-                    Build(reader,table, out var runLater);
+                    Build(reader, table, out var runLater);
                     _storage.Add(this);
                     reader.Close();
                     runLater.Run();
@@ -184,30 +174,17 @@ namespace Persistence
                 throw new PersistenceException("Error on Load", ex);
             }
 
-            if (table.IsSpecialization)
-                Load(type.BaseType);
             return true;
         }
 
-        public bool Persist()
+        private bool Save(Table table)
         {
-            return Save() && Load();
-        }
-
-        public bool Save()
-        {
-            return Save(GetType());
-        }
-
-        private bool Save(Type type)
-        {
-            var table = Persistence.Tables[type.Name];
-            if (table.IsSpecialization && !Save(type.BaseType))
+            if (table.IsSpecialization && !Save(table.BaseTable))
                 return false;
             var fields = new Dictionary<string, object>();
             if (table.Versioned)
                 fields.Add("__Version", _Version);
-            
+
             var keyChange = false;
             foreach (var column in table.Columns)
             {
@@ -216,7 +193,7 @@ namespace Persistence
                 switch (column)
                 {
                     case PrimaryKey pk:
-                        if(obj == null)
+                        if (obj == null)
                             throw new PersistenceException("The PrimaryKey cannot be null");
                         if (obj.Equals(pk.DefaultValue))
                             if (!pk.AutoIncrement)
@@ -234,12 +211,13 @@ namespace Persistence
                         fields.Add(fa.SqlName, obj);
                         break;
                     case Relationship manyToOne:
+                        var dao = (DAO)obj;
                         if (obj == null)
                             if (manyToOne.Nullable == Nullable.NotNull)
                                 throw new PersistenceException($"Property value {manyToOne.Prop} cannot be null");
                             else
                                 continue;
-                        if (manyToOne.Cascade.HasFlag(Cascade.SAVE) && !((DAO) obj).Save())
+                        if (manyToOne.Cascade.HasFlag(Cascade.SAVE) && dao.Loaded && !dao.Save())
                             continue;
                         foreach (var (name, fk) in manyToOne.Links)
                             fields.Add(name, fk.Prop.GetValue(obj));
@@ -258,14 +236,14 @@ namespace Persistence
             }
             catch (Exception ex)
             {
-                if (ex is SQLException {ErrorCode: SQLException.ErrorCodeVersion})
+                if (ex is SQLException { ErrorCode: SQLException.ErrorCodeVersion })
                     return false;
                 throw new PersistenceException($"Error on save object {ToString()}", ex);
             }
 
             Console.WriteLine(res);
             if (res == -1) return false;
-            
+
             UpdateIdentifiers(table, res);
             return true;
 
@@ -273,11 +251,11 @@ namespace Persistence
 
         private void UpdateIdentifiers(Table table, long res = 0)
         {
-            if (table.DefaultPk && _id == long.MinValue)
+            if (table.DefaultPk && _id == 0)
             {
                 _id = res;
             }
-            
+
             foreach (var key in LastKeys.Keys.ToList())
             {
                 LastKeys[key] = key.Prop.GetValue(this);
@@ -300,29 +278,32 @@ namespace Persistence
                         tail += "}";
                         delim = "";
                     }
-                    else if (_id == long.MinValue)
-                    {
-                        continue;
-                    }
                 }
-                output += $"{delim}{propertyInfo.Name}: \"" + (propertyInfo.PropertyType.IsSubclassOf(typeof(DAO)) ?
-                 propertyInfo.PropertyType : propertyInfo.GetValue(this)??"null") + "\"";
-                delim = ", ";
 
+                output += $"{delim}{propertyInfo.Name}: ";
+                if (!propertyInfo.PropertyType.IsSubclassOf(typeof(DAO)))
+                {
+                    var value = propertyInfo.GetValue(this);
+                    output += value == null ? "null" : $"\"{value}\"";
+                }
+                else
+                    output += propertyInfo.PropertyType;
+
+                delim = ", ";
             }
 
             return output + tail + "]";
         }
-        
+
         private void ApplyInProperty<T>(Action<PropertyInfo, T> action)
         {
             foreach (var pi in GetType().GetProperties())
             {
                 switch (pi.GetCustomAttributes(typeof(PersistenceAttribute), true)[0])
                 {
-                        case T th:
-                            action(pi, th);
-                            break;
+                    case T th:
+                        action(pi, th);
+                        break;
                 }
             }
         }
@@ -362,41 +343,19 @@ namespace Persistence
             }
 
             var reader = Persistence.Sql.Select(table, field);
-
-            return BuildList<T>(table, reader);
+            var list = new PList<T>();
+            list.BuildList(reader);
+            return list;
         }
-        
-        public static IEnumerable<T> FindWhereQuery<T>(T obj, string whereQuery) where T : DAO
+
+        public static PList<T> FindWhereQuery<T>(string whereQuery) where T : DAO
         {
             var type = typeof(T);
             var table = Persistence.Tables[type.Name];
             var reader = Persistence.Sql.SelectWhereQuery(table, whereQuery);
-            return BuildList<T>(table, reader);
-        }
-
-        private static List<T> BuildList<T>(Table table, DbDataReader reader)
-            where T : DAO
-        {
-            var list = new MyList<T>();
-            try
-            {
-                RunLater runLater = null;
-                while (reader.Read())
-                {
-                    var instance = Activator.CreateInstance<T>();
-                    instance.Build(reader, table, out runLater);
-                    list.Add(instance);
-                }
-
-                reader.Close();
-                runLater?.Run();
-            }
-            catch (Exception ex)
-            {
-                throw new PersistenceException("Error on Load", ex);
-            }
-
-            return list;
+            var myList = new PList<T>();
+            myList.BuildList(reader);
+            return myList;
         }
     }
 }

@@ -79,7 +79,7 @@ namespace Persistence
     [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = false)]
     public class OneToManyAttribute : PersistenceAttribute
     {
-        public string mappedBy { get; set; }
+        public string ReferencedName { get; set; }
         public Fetch Fetch { get; set; }
         public Cascade Cascade { get; set; }
         public bool orphanRemoval { get; set; }
@@ -108,7 +108,6 @@ namespace Persistence
             this.AutoIncrement = pk.AutoIncrement;
         }
     }
-
     
     [AttributeUsage(AttributeTargets.Property)]
     internal class DefaultPkAttribute : PrimaryKeyAttribute
