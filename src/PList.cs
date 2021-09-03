@@ -3,7 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
-using System.Data.Common;
+using System.Data;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 
@@ -24,42 +24,39 @@ namespace Persistence
         protected Type GetMemberType();
         protected internal void LoadList(OneToMany oneToMany, DAO obj);
         public bool Save();
+        public bool Delete();
     }
     
     public sealed class PList<T> : List<T>, IPList, INotifyCollectionChanged where T : DAO
     {
-        private Relationship _relationship;
+        private OneToMany _oneToMany;
         private DAO _root;
+        private string _whereQuery;
         private List<T> _toDelete = new List<T>();
-        private long _length;
-        private long _first;
-        private long _last;
         private readonly Table _table;
         private readonly Type _type;
-        public long Length => _length;
 
         public PList()
         {
             _type = typeof(T);
             _table = Persistence.Tables[_type.Name];
         }
-
-        // Constructs a List with a given initial capacity. The list is
-        // initially empty, but will have room for the given number of elements
-        // before any reallocations are required.
-        // 
-        public PList(int capacity): base(capacity)
-        {
-        }
-
-        // Constructs a List, copying the contents of the given collection. The
-        // size and capacity of the new list will both be equal to the size of the
-        // given collection.
-        // 
+        
         public PList(IEnumerable<T> collection): base(collection)
         {
-            
+            _type = typeof(T);
+            _table = Persistence.Tables[_type.Name];
         } 
+
+        public PList(string whereQuery)
+        {
+            _type = typeof(T);
+            _table = Persistence.Tables[_type.Name];
+            _whereQuery = whereQuery;
+            var reader = Persistence.Sql.SelectWhereQuery(_table, whereQuery, 0, 1<<31-1);
+            BuildList(reader);
+        }
+
         // Sets or Gets the element at the given index.
         public new T this[int index]
         {
@@ -80,7 +77,6 @@ namespace Persistence
         public new void Add(T item)
         {
             base.Add(item);
-            _length ++;
         }
 
         int IList.Add(object? item)
@@ -133,7 +129,6 @@ namespace Persistence
         // Clears the contents of List.
         public new void Clear()
         {
-            _first = _last = 0;
             base.Clear();
         }
 
@@ -457,31 +452,31 @@ namespace Persistence
         void IPList.LoadList(OneToMany oneToMany, DAO obj)
         {
             Clear();
-            _relationship = oneToMany.Relationship;
+            _oneToMany = oneToMany;
             _root = obj;
             if (oneToMany.Fetch == Fetch.Eager)
             {
-                Load();
+                Load(0, oneToMany.ItemsByAccess);
             }
         }
 
         public event NotifyCollectionChangedEventHandler CollectionChanged;
 
-        public void BuildList(DbDataReader reader)
+        public void BuildList(IDataReader reader)
         {
             Clear();
             try
             {
-                RunLater runLater = null;
+                var runLater = new RunLater();
                 while (reader.Read())
                 {
                     var instance = Activator.CreateInstance<T>();
-                    instance.Build(reader, _table, out runLater);
+                    instance.Build(reader, _table, runLater);
                     Add(instance);
                 }
 
                 reader.Close();
-                runLater?.Run();
+                runLater.Run();
             }
             catch (Exception ex)
             {
@@ -501,6 +496,21 @@ namespace Persistence
             RemoveAt(index);
             return true;
         }
+        
+        public bool Delete()
+        {
+            foreach (var dao in this)
+            {
+                if (!dao.Delete())
+                {
+                    RemoveRange(0, IndexOf(dao));
+                    return false;
+                }
+            }
+            Clear();
+            return true;
+        }
+        
         public bool Delete(T value)
         {
             if (!value.Delete()) return false;
@@ -508,14 +518,15 @@ namespace Persistence
             return true;
         }
 
-        public bool Load()
+        public bool Load(uint first, uint length)
         {
+            if (_oneToMany == null || _root == null) return false;
             var whereClause = "";
-            foreach (var (key, field) in _relationship.Links)
+            foreach (var (key, field) in _oneToMany.Relationship.Links)
             {
                 whereClause += $"{key} = {field.Prop.GetValue(_root)}";
             }
-            var reader = Persistence.Sql.SelectWhereQuery(_table, whereClause);
+            var reader = Persistence.Sql.SelectWhereQuery(_table, whereClause, first, length);
             BuildList(reader);
             return true;
         }
@@ -523,7 +534,12 @@ namespace Persistence
         public bool DeleteAll()
         {
             RemoveAll(dao => dao.Delete());
-            return _length == 0;
+            return Count == 0;
+        }
+
+        public static PList<T> FindWhereQuery(string whereQuery)
+        {
+            return new PList<T>(whereQuery);
         }
     }
 }

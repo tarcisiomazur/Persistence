@@ -22,7 +22,7 @@ namespace Persistence
         private bool Loaded => !_NotLoaded;
         public event PropertyChangedEventHandler PropertyChanged;
 
-        [DefaultPk("Id", SqlDbType.BigInt, AutoIncrement = true, DefaultValue = 0)]
+        [DefaultPk(FieldName = "Id",FieldType = SqlDbType.BigInt, AutoIncrement = true, DefaultValue = 0)]
         public long Id
         {
             get => _id;
@@ -32,7 +32,7 @@ namespace Persistence
         public bool Load() => Load(__table);
         public bool Save() => Save(__table);
         public bool Persist() => Persist(__table);
-        public bool Delete() => Delete(GetType());
+        public bool Delete() => Delete(__table);
 
         static DAO()
         {
@@ -62,17 +62,34 @@ namespace Persistence
             _id = value;
         }
 
-        private bool Delete(Type type)
+        private bool Delete(Table table)
         {
-            var table = Persistence.Tables[type.Name];
             var keys = new Dictionary<string, object>();
-            foreach (var column in table.Columns.Where(column => column is PrimaryKey))
+
+            foreach (var column in table.Columns)
             {
-                var value = column.Prop.GetValue(this);
-                keys.Add(((PrimaryKey)column).SqlName, value);
+                switch (column)
+                {
+                    case OneToMany oneToMany:
+                        if (!oneToMany.Cascade.HasFlag(Cascade.DELETE)) continue;
+                        var list = (IPList) oneToMany.Prop.GetValue(this);
+                        if (list != null && !list.Delete())
+                            return false;
+                        break;
+                    case PrimaryKey _:
+                        var value = column.Prop.GetValue(this);
+                        keys.Add(column.SqlName, value);
+                        break;
+                    case Relationship relationship:
+                        if (!relationship.Cascade.HasFlag(Cascade.DELETE)) continue;
+                        var dao = (DAO) column.Prop.GetValue(this);
+                        if (dao != null && !dao.Delete())
+                            return false;
+                        break;
+                }
             }
 
-            return Persistence.Sql.Delete(table, keys);
+            return Persistence.Sql.Delete(table, keys) && (!table.IsSpecialization || Delete(table.BaseTable));
         }
 
         public static T Load<T>(long id) where T : DAO
@@ -90,9 +107,8 @@ namespace Persistence
             return obj;
         }
 
-        internal void Build(IDataRecord reader, Table table, out RunLater runLater)
+        internal void Build(IDataRecord reader, Table table, RunLater runLater)
         {
-            runLater = new RunLater();
             object value;
             if (table.Versioned)
             {
@@ -162,10 +178,11 @@ namespace Persistence
             var keys = table.PrimaryKeys.ToDictionary(pk => pk.SqlName, pk => pk.Prop.GetValue(this));
             try
             {
-                var reader = Persistence.Sql.Select(table, keys);
+                var reader = Persistence.Sql.Select(table, keys,0,1);
+                var runLater = new RunLater();
                 if (reader.Read())
                 {
-                    Build(reader, table, out var runLater);
+                    Build(reader, table, runLater);
                     _storage.Add(this);
                     reader.Close();
                     runLater.Run();
@@ -359,7 +376,7 @@ namespace Persistence
                 }
             }
 
-            var reader = Persistence.Sql.Select(table, field);
+            var reader = Persistence.Sql.Select(table, field, 0, 1<<31-1);
             var list = new PList<T>();
             list.BuildList(reader);
             return list;
@@ -367,12 +384,7 @@ namespace Persistence
 
         public static PList<T> FindWhereQuery<T>(string whereQuery) where T : DAO
         {
-            var type = typeof(T);
-            var table = Persistence.Tables[type.Name];
-            var reader = Persistence.Sql.SelectWhereQuery(table, whereQuery);
-            var myList = new PList<T>();
-            myList.BuildList(reader);
-            return myList;
+            return new PList<T>(whereQuery);
         }
     }
 }

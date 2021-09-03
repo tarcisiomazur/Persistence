@@ -5,7 +5,7 @@ namespace Persistence
 {
     public class Relationship : PropColumn
     {
-        public readonly Dictionary<string,Field> Links;
+        public Dictionary<string,Field> Links { get; }
         public RelationshipType Type { get; set; }
         public string FkName => GetFkName();
         public Cascade Cascade { get; }
@@ -26,7 +26,7 @@ namespace Persistence
         public Relationship()
         {
             Nullable = Nullable.NotNull;
-            Cascade = Cascade.NULL;
+            Cascade = Cascade.ALL;
             Fetch = Fetch.Eager;
             OnUpdate = FkOptions.CASCADE;
             Links = new Dictionary<string, Field>();

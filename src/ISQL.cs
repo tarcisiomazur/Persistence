@@ -24,14 +24,14 @@ namespace Persistence
         protected internal long InsertOrUpdate(Table table, Dictionary<string, object> fields);
         protected internal long Update(Table table, Dictionary<string, object> fields,
             Dictionary<PropColumn, object> keys);
-        protected internal DbDataReader Select(Table table, Dictionary<string, object> keys);
-        protected internal DbDataReader Select(Table table, Dictionary<string, object> keys, long first, long count);
+        protected internal DbDataReader Select(Table table, Dictionary<string, object> keys, uint offset, uint length);
         protected internal bool Delete(Table table, Dictionary<string, object> keys);
-        protected internal long SelectCount(Table table, Dictionary<string, object> keys);
+        protected internal uint SelectCount(Table table, Dictionary<string, object> keys);
+        protected internal uint SelectCountWhereQuery(Table table, string likeQuery);
         protected internal KeyType GetKeyType(string key);
         protected internal bool ExistTrigger(Table table, string triggerName);
         protected internal void CreateTrigger(Table table, string sqlTrigger, string triggerName,
             SqlTriggerType sqlTriggerType);
-        protected internal DbDataReader SelectWhereQuery(Table table, string likeQuery);
+        protected internal DbDataReader SelectWhereQuery(Table table, string likeQuery, uint offset, uint length);
     }
 }

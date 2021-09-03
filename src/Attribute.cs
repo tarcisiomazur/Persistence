@@ -37,27 +37,6 @@ namespace Persistence
         {
         }
 
-        public FieldAttribute(string FieldName, SqlDbType FieldType = SqlDbType.Text)
-        {
-            this.FieldName = FieldName;
-            this.FieldType = FieldType;
-        }
-
-        public FieldAttribute(string FieldName, SqlDbType FieldType, int Length)
-        {
-            this.FieldName = FieldName;
-            this.FieldType = FieldType;
-            this.Length = Length;
-        }
-
-        public FieldAttribute(string FieldName, SqlDbType FieldType, int Length, int Precision)
-        {
-            this.FieldName = FieldName;
-            this.FieldType = FieldType;
-            this.Length = Length;
-            this.Precision = Precision;
-        }
-
     }
 
     [AttributeUsage(AttributeTargets.Property)]
@@ -93,28 +72,25 @@ namespace Persistence
         public object DefaultValue { get; set; }
         public bool AutoIncrement { get; set; }
 
-        public PrimaryKeyAttribute(string FieldName = null, SqlDbType FieldType = SqlDbType.Text, int Length = 0,
-            int Precision = 0, object DefaultValue = null, bool AutoIncrement = false) :
-            base(FieldName, FieldType, Length, Precision)
+        public PrimaryKeyAttribute()
         {
-            this.DefaultValue = DefaultValue;
-            this.AutoIncrement = AutoIncrement;
+            
         }
 
-        public PrimaryKeyAttribute(PrimaryKeyAttribute pk) :
-            base(pk.FieldName, pk.FieldType, pk.Length, pk.Precision)
+        internal PrimaryKeyAttribute(PrimaryKeyAttribute pk)
         {
-            this.DefaultValue = pk.DefaultValue;
-            this.AutoIncrement = pk.AutoIncrement;
+            DefaultValue = pk.DefaultValue;
+            AutoIncrement = pk.AutoIncrement;
+            FieldName = pk.FieldName;
+            FieldType = pk.FieldType;
+            Length = pk.Length;
+            Precision = pk.Precision;
         }
     }
     
     [AttributeUsage(AttributeTargets.Property)]
     internal class DefaultPkAttribute : PrimaryKeyAttribute
     {
-        public DefaultPkAttribute(string FieldName, SqlDbType FieldType) : base(FieldName, FieldType)
-        {
-        }
     }
     
     [AttributeUsage(AttributeTargets.Class)] 

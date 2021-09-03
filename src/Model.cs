@@ -51,10 +51,10 @@ namespace Persistence
     {
         NULL = 0x00,
         SAVE = 0x01,
-        REMOVE = 0x02,
+        DELETE = 0x02,
         REFRESH = 0x04,
         FREE = 0x08,
-        ALL = SAVE | REMOVE | REFRESH | FREE,
+        ALL = SAVE | DELETE | REFRESH | FREE,
         PERSIST = 0x16 | ALL
     }
 }

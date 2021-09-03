@@ -73,7 +73,9 @@ namespace Persistence
                 relationship.Table = table;
                 relationship.TableReferenced = tablePk;
                 tablePk.PrimaryKeys.Do(columnPk => relationship.AddKey(columnPk));
-                Sql.ValidadeForeignKeys(table, relationship);
+                if(!Sql.ValidadeForeignKeys(table, relationship))
+                    throw new
+                        Exception($"Could not validate relatinship {relationship.Prop} of Table {table}, check database for matches");
             }
         }
 
@@ -85,14 +87,18 @@ namespace Persistence
                 table.BaseTable = Tables[table.Type.BaseType.Name];
 
             var columns = table.Columns;
-            Sql.ValidatePrimaryKeys(table, table.PrimaryKeys);
+            if (!Sql.ValidatePrimaryKeys(table, table.PrimaryKeys))
+                throw new
+                    Exception($"Could not validate primary keys of Table {table}, check database for matches");
             table.PrimaryKeys.Do(pk => pk.Persisted = true);
 
-            foreach (var column1 in columns.Where(column =>
-                column is Field { Persisted: false } && !(column is PrimaryKey)))
+            foreach (var column in columns.OfType<Field>().Where(column =>
+                column is { Persisted: false } && !(column is PrimaryKey)))
             {
-                var column = (Field)column1;
-                Sql.ValidateField(table, column);
+                if(!Sql.ValidateField(table, column))
+                    throw new
+                        Exception($"Could not validate Field {column.Prop} of Table {table}, check database for matches");
+                    
                 column.Persisted = true;
             }
 
@@ -165,9 +171,13 @@ namespace Persistence
                     case DefaultPkAttribute _:
                         break;
                     case PrimaryKeyAttribute pk:
+                        if (pk.FieldName.IsNullOrEmpty())
+                            pk.FieldName = pi.Name;
                         table.AddPrimaryKey(new PrimaryKey(pk) { Prop = pi });
                         break;
                     case FieldAttribute field:
+                        if (field.FieldName.IsNullOrEmpty())
+                            field.FieldName = pi.Name;
                         table.AddColumn(new Field(field) { Prop = pi });
                         break;
                     case ManyToOneAttribute manyToOne:
