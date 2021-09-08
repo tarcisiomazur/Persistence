@@ -8,7 +8,16 @@ namespace Persistence
 {
     internal static class InternalCollectionExtension
     {
-        public static bool IsNullOrEmpty(this string str) => string.IsNullOrEmpty(str);
+        public static List<string> GetFields(this IDataRecord data)
+        {
+            var l = new List<string>();
+            for (var i = 0; i < data.FieldCount; i++)
+            {
+                l.Add(data.GetName(i));
+            }
+
+            return l;
+        }
         public static object Read(this IDataRecord data, string field)
         {
             try

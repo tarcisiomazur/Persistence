@@ -153,6 +153,8 @@ namespace Persistence
                         break;
                     case Field field:
                         value = reader.Read(field.SqlName);
+                        if (field.IsFlag)
+                            value = Convert.ToInt32(value);
                         if (field is PrimaryKey)
                             LastKeys[field] = value;
                         field.Prop.SetValue(this, value);
@@ -233,6 +235,8 @@ namespace Persistence
                         fields.Add(pk.SqlName, obj);
                         break;
                     case Field fa:
+                        if (fa.IsFlag)
+                            obj = (int) obj;
                         fields.Add(fa.SqlName, obj);
                         break;
                     case Relationship relationship:

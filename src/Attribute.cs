@@ -8,18 +8,19 @@ namespace Persistence
     }
 
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
-    public class StoredProcedureAttributes : PersistenceAttribute
+    public class StoredProcedureAttribute : PersistenceAttribute
     {
         public string ProcedureName { get; set; }
         public ProcedureTypeCommand ProcedureType { get; set; }
         public String[] ProcParams { get; set; }
-
-        public StoredProcedureAttributes(string procName, ProcedureTypeCommand procType, params String[] param)
-        {
-            ProcedureName = procName;
-            ProcedureType = procType;
-            ProcParams = param;
-        }
+        
+    }
+    
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
+    public class StoredFunctionAttribute : PersistenceAttribute
+    {
+        public string FunctionnName { get; set; }
+        public String[] ProcParams { get; set; }
     }
 
     [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = true)]

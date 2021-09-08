@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Data;
+using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 
@@ -25,6 +26,7 @@ namespace Persistence
         protected internal void LoadList(OneToMany oneToMany, DAO obj);
         public bool Save();
         public bool Delete();
+        public void BuildList(IDataReader reader);
     }
     
     public sealed class PList<T> : List<T>, IPList, INotifyCollectionChanged where T : DAO
@@ -510,7 +512,7 @@ namespace Persistence
             Clear();
             return true;
         }
-        
+
         public bool Delete(T value)
         {
             if (!value.Delete()) return false;

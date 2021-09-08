@@ -9,6 +9,7 @@ namespace Persistence
         public int Precision { get; }
         public int Length { get; }
         public object DefaultValue { get; internal set; }
+        public bool IsFlag { get; set; }
 
         public Field(FieldAttribute attribute)
         {

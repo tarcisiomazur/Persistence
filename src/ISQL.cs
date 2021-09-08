@@ -33,5 +33,6 @@ namespace Persistence
         protected internal void CreateTrigger(Table table, string sqlTrigger, string triggerName,
             SqlTriggerType sqlTriggerType);
         protected internal DbDataReader SelectWhereQuery(Table table, string likeQuery, uint offset, uint length);
+        protected internal DbDataReader ExecuteProcedure(string procedureName, Dictionary<string,object> parameters);
     }
 }

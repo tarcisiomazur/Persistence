@@ -171,14 +171,18 @@ namespace Persistence
                     case DefaultPkAttribute _:
                         break;
                     case PrimaryKeyAttribute pk:
-                        if (pk.FieldName.IsNullOrEmpty())
+                        if (string.IsNullOrEmpty(pk.FieldName))
                             pk.FieldName = pi.Name;
                         table.AddPrimaryKey(new PrimaryKey(pk) { Prop = pi });
                         break;
                     case FieldAttribute field:
-                        if (field.FieldName.IsNullOrEmpty())
+                        if (string.IsNullOrEmpty(field.FieldName))
                             field.FieldName = pi.Name;
-                        table.AddColumn(new Field(field) { Prop = pi });
+                        table.AddColumn(new Field(field)
+                        {
+                            Prop = pi,
+                            IsFlag = pi.PropertyType.GetCustomAttributes(typeof(FlagsAttribute), false).Length>0
+                        });
                         break;
                     case ManyToOneAttribute manyToOne:
                         if (pi.PropertyType.IsSubclassOf(typeof(DAO)))
