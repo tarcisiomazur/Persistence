@@ -33,6 +33,10 @@ namespace Persistence
 
         public static void SetSqlValue(this PropertyInfo propertyInfo, DAO dao, object obj)
         {
+            if (obj is not bool && propertyInfo.PropertyType == typeof(bool))
+            {
+                obj = obj == null || obj.Equals(0);
+            }
             propertyInfo.SetValue(dao, obj);
         }
 

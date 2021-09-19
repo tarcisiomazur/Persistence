@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
-using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 
@@ -22,7 +21,24 @@ namespace Persistence
 
         internal static void BuildTables()
         {
-            foreach (var type in
+            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            foreach (var assembly in assemblies)
+            {
+                try
+                {
+                    foreach (var type in assembly.GetTypes())
+                    {
+                        if (type.IsSubclassOf(typeof(DAO)) && type.GetCustomAttribute<TableAttribute>() != null)
+                            Init(type);
+                    }
+                }
+                catch(Exception ex)
+                {
+                    Console.WriteLine(ex);
+                }
+            }
+            /*
+             foreach (var type in
                 from assembly in AppDomain.CurrentDomain.GetAssemblies()
                 from type in assembly.GetTypes()
                 where type.IsSubclassOf(typeof(DAO)) && type.GetCustomAttribute<TableAttribute>() != null
@@ -30,6 +46,7 @@ namespace Persistence
             {
                 Init(type);
             }
+            */
         }
 
         public static void Init(ISQL sql)
@@ -181,7 +198,7 @@ namespace Persistence
                         table.AddColumn(new Field(field)
                         {
                             Prop = pi,
-                            IsFlag = pi.PropertyType.GetCustomAttributes(typeof(FlagsAttribute), false).Length>0
+                            IsEnum = pi.PropertyType.IsEnum
                         });
                         break;
                     case ManyToOneAttribute manyToOne:

@@ -26,7 +26,7 @@ namespace Persistence
         protected internal void LoadList(OneToMany oneToMany, DAO obj);
         public bool Save();
         public bool Delete();
-        public void BuildList(IDataReader reader);
+        public void BuildList(DbDataReader reader);
     }
     
     public sealed class PList<T> : List<T>, IPList, INotifyCollectionChanged where T : DAO
@@ -48,14 +48,14 @@ namespace Persistence
         {
             _type = typeof(T);
             _table = Persistence.Tables[_type.Name];
-        } 
+        }
 
-        public PList(string whereQuery)
+        public PList(string whereQuery, uint offset = 0, uint length = 1 << 31 - 1)
         {
             _type = typeof(T);
             _table = Persistence.Tables[_type.Name];
             _whereQuery = whereQuery;
-            var reader = Persistence.Sql.SelectWhereQuery(_table, whereQuery, 0, 1<<31-1);
+            var reader = Persistence.Sql.SelectWhereQuery(_table, whereQuery, offset, length);
             BuildList(reader);
         }
 
@@ -464,7 +464,7 @@ namespace Persistence
 
         public event NotifyCollectionChangedEventHandler CollectionChanged;
 
-        public void BuildList(IDataReader reader)
+        public void BuildList(DbDataReader reader)
         {
             Clear();
             try

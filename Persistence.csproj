@@ -5,10 +5,14 @@
         <TargetFrameworks>net5.0;net6.0</TargetFrameworks>
         <LangVersion>10</LangVersion>
         <PublishReadyToRun>true</PublishReadyToRun>
+        <Authors>Tarcisio Mazur Junior</Authors>
+    </PropertyGroup>
+
+    <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+      <DebugType>none</DebugType>
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="JetBrains.Annotations" Version="2021.2.0-eap3" />
         <PackageReference Include="MySql.Data" Version="8.0.25" />
         <PackageReference Include="OptimizedPriorityQueue" Version="5.1.0" />
     </ItemGroup>

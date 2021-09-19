@@ -10,8 +10,10 @@ namespace Persistence
     }
 
     [Serializable]
-    public class PersistenceException : Exception
+    public class PersistenceException : Exception, SQLException
     {
+        public int ErrorCode { get; set; }
+        
         public PersistenceException()
         {
 

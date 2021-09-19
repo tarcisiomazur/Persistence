@@ -5,12 +5,11 @@ using System.Data;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using JetBrains.Annotations;
 using Type = System.Type;
 
 namespace Persistence
 {
-    public class DAO
+    public class DAO : INotifyPropertyChanged
     {
         internal static bool Init() => true;
         private Dictionary<PropColumn, object> LastKeys;
@@ -22,7 +21,7 @@ namespace Persistence
         private bool Loaded => !_NotLoaded;
         public event PropertyChangedEventHandler PropertyChanged;
 
-        [DefaultPk(FieldName = "Id",FieldType = SqlDbType.BigInt, AutoIncrement = true, DefaultValue = 0)]
+        [DefaultPk(FieldName = "Id", FieldType = SqlDbType.BigInt, AutoIncrement = true, DefaultValue = 0)]
         public long Id
         {
             get => _id;
@@ -102,7 +101,7 @@ namespace Persistence
 
         private static object Load(long id, Type t)
         {
-            var obj = (DAO)Activator.CreateInstance(t);
+            var obj = (DAO) Activator.CreateInstance(t);
             obj?.Load();
             return obj;
         }
@@ -113,7 +112,7 @@ namespace Persistence
             if (table.Versioned)
             {
                 value = reader.Read("__Version");
-                _Version = (long)(value ?? 0);
+                _Version = (long) (value ?? 0);
             }
 
             if (table.IsSpecialization)
@@ -124,7 +123,7 @@ namespace Persistence
                 switch (column)
                 {
                     case Relationship rel:
-                        var dao = (DAO)Activator.CreateInstance(rel.Prop.PropertyType);
+                        var dao = (DAO) Activator.CreateInstance(rel.Prop.PropertyType);
                         var isNull = false;
                         foreach (var (name, fk) in rel.Links)
                         {
@@ -148,16 +147,16 @@ namespace Persistence
                         break;
                     case OneToMany o2m:
                         var obj = (IPList) Activator.CreateInstance(o2m.Prop.PropertyType);
-                        o2m.Prop.SetValue(this,obj);
+                        o2m.Prop.SetValue(this, obj);
                         runLater.Later(10, () => obj.LoadList(o2m, this));
                         break;
                     case Field field:
                         value = reader.Read(field.SqlName);
-                        if (field.IsFlag)
+                        if (field.IsEnum)
                             value = Convert.ToInt32(value);
                         if (field is PrimaryKey)
                             LastKeys[field] = value;
-                        field.Prop.SetValue(this, value);
+                        field.Prop.SetSqlValue(this, value);
                         break;
                 }
             }
@@ -180,7 +179,7 @@ namespace Persistence
             var keys = table.PrimaryKeys.ToDictionary(pk => pk.SqlName, pk => pk.Prop.GetValue(this));
             try
             {
-                var reader = Persistence.Sql.Select(table, keys,0,1);
+                var reader = Persistence.Sql.Select(table, keys, 0, 1);
                 var runLater = new RunLater();
                 if (reader.Read())
                 {
@@ -235,12 +234,12 @@ namespace Persistence
                         fields.Add(pk.SqlName, obj);
                         break;
                     case Field fa:
-                        if (fa.IsFlag)
+                        if (fa.IsEnum)
                             obj = (int) obj;
                         fields.Add(fa.SqlName, obj);
                         break;
                     case Relationship relationship:
-                        var dao = (DAO)obj;
+                        var dao = (DAO) obj;
                         if (obj == null)
                             if (relationship.Nullable == Nullable.NotNull)
                                 throw new PersistenceException($"Property value {relationship.Prop} cannot be null");
@@ -252,12 +251,12 @@ namespace Persistence
                             fields.Add(name, fk.Prop.GetValue(obj));
                         break;
                     case OneToMany list:
-                        if (!list.Cascade.HasFlag(Cascade.SAVE)) break;
+                        if (!list.Cascade.HasFlag(Cascade.SAVE) || obj == null) break;
                         var l = obj as IPList;
                         foreach (var o in l)
                         {
-                            if(o != null)
-                                list.Relationship.Prop.SetValue(o,this);
+                            if (o != null)
+                                list.Relationship.Prop.SetValue(o, this);
                         }
 
                         later.Later(() => l.Save());
@@ -275,16 +274,17 @@ namespace Persistence
             }
             catch (Exception ex)
             {
-                if (ex is SQLException { ErrorCode: SQLException.ErrorCodeVersion })
+                if (ex is SQLException {ErrorCode: SQLException.ErrorCodeVersion})
                     return false;
-                throw new PersistenceException($"Error on save object {ToString()}", ex);
+                
+                throw new PersistenceException($"Error on save object {ToString()}", ex)
+                    {ErrorCode = ex is SQLException sqlex ? sqlex.ErrorCode : 0};
             }
-            
+
             if (res == -1) return false;
             UpdateIdentifiers(table, res);
             later.Run();
             return true;
-
         }
 
         private void UpdateIdentifiers(Table table, long res = 0)
@@ -346,7 +346,6 @@ namespace Persistence
             }
         }
 
-        [NotifyPropertyChangedInvocator]
         protected virtual void OnPropertyChanged([CallerMemberName] string propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
@@ -380,7 +379,7 @@ namespace Persistence
                 }
             }
 
-            var reader = Persistence.Sql.Select(table, field, 0, 1<<31-1);
+            var reader = Persistence.Sql.Select(table, field, 0, 1 << 31 - 1);
             var list = new PList<T>();
             list.BuildList(reader);
             return list;
