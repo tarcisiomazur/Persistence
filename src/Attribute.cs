@@ -3,6 +3,13 @@ using System.Data;
 
 namespace Persistence
 {
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+    public class ViewAttribute : Attribute
+    {
+        public string ViewName { get; set; }
+        public string Schema { get; set; } = Persistence.Sql.DefaultSchema;
+    }
+    
     public abstract class PersistenceAttribute : Attribute
     {
     }

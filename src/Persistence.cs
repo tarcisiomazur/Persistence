@@ -6,7 +6,7 @@ using System.Reflection;
 
 namespace Persistence
 {
-    public static class Persistence
+    public class Persistence
     {
         internal static readonly Dictionary<string, Table> Tables = new Dictionary<string, Table>();
         internal static readonly Dictionary<Table, Storage> Storage = new Dictionary<Table, Storage>();

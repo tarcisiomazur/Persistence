@@ -34,5 +34,6 @@ namespace Persistence
             SqlTriggerType sqlTriggerType);
         protected internal DbDataReader SelectWhereQuery(Table table, string likeQuery, uint offset, uint length);
         protected internal DbDataReader ExecuteProcedure(string procedureName, Dictionary<string,object> parameters);
+        protected internal DbDataReader SelectView(string name, string schema);
     }
 }
