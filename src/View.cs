@@ -18,7 +18,8 @@ namespace Persistence
                 var obj = Activator.CreateInstance<T>();
                 foreach (var propertyInfo in type.GetProperties())
                 {
-                    var value = reader.Read(propertyInfo.Name);
+                    var field = propertyInfo.GetCustomAttribute<FieldAttribute>();
+                    var value = reader.Read(field is not null? field.FieldName : propertyInfo.Name);
                     if (propertyInfo.PropertyType.IsEnum)
                     {
                         value = Convert.ToInt32(value);

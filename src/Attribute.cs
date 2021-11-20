@@ -40,6 +40,7 @@ namespace Persistence
         public Nullable Nullable { get; set; }
         public bool UniqueIndex { get; set; }
         public object DefaultValue { get; set; }
+        public bool ReadOnly { get; set; }
 
         public FieldAttribute()
         {

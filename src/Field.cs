@@ -10,6 +10,7 @@ namespace Persistence
         public int Length { get; }
         public object DefaultValue { get; internal set; }
         public bool IsEnum { get; set; }
+        public bool ReadOnly { get; }
 
         public Field(FieldAttribute attribute)
         {
@@ -20,6 +21,7 @@ namespace Persistence
             Precision = attribute.Precision;
             Length = attribute.Length;
             Nullable = attribute.Nullable;
+            ReadOnly = attribute.ReadOnly;
         }
 
         internal Field()

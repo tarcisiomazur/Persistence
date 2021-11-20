@@ -91,12 +91,11 @@ namespace Persistence
             return Persistence.Sql.Delete(table, keys) && (!table.IsSpecialization || Delete(table.BaseTable));
         }
 
-        public static T Load<T>(long id) where T : DAO
+        public static T? Load<T>(long id) where T : DAO
         {
             var obj = Activator.CreateInstance<T>();
             obj.Id = id;
-            obj.Load();
-            return obj;
+            return obj.Load() ? obj : null;
         }
 
         private static object Load(long id, Type t)
@@ -234,6 +233,8 @@ namespace Persistence
                         fields.Add(pk.SqlName, obj);
                         break;
                     case Field fa:
+                        if(fa.ReadOnly)
+                            break;
                         if (fa.IsEnum)
                             obj = (int) obj;
                         fields.Add(fa.SqlName, obj);
