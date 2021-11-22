@@ -54,7 +54,6 @@ namespace Persistence
         protected DAO()
         {
             LastKeys = new Dictionary<PropColumn, object>();
-            LastChanges = new HashSet<string>();
             IsChanged = true;
             ctor(GetType());
         }
@@ -65,6 +64,7 @@ namespace Persistence
                 ctor(type.BaseType);
 
             var table = Persistence.Tables[type.Name];
+            LastChanges = new HashSet<string>(table.Columns.Select(column => column.Prop.Name));
             foreach (var col in table.Columns.OfType<PrimaryKey>())
             {
                 LastKeys.Add(col, null);
@@ -113,7 +113,6 @@ namespace Persistence
 
         public static T? Load<T>(long id) where T : DAO
         {
-            Console.WriteLine($"Loading {typeof(T).Name} {id}");
             var obj = Activator.CreateInstance<T>();
             obj.Id = id;
             return obj.Load() ? obj : null;
@@ -216,7 +215,6 @@ namespace Persistence
 
         private bool Load(Table table)
         {
-            Console.WriteLine($"Loading T {table.Name} + {Id}");
             var keys = table.PrimaryKeys.ToDictionary(pk => pk.SqlName, pk => pk.Prop.GetValue(this));
             try
             {
