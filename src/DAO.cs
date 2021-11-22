@@ -75,6 +75,11 @@ namespace Persistence
                 col.Prop.SetValue(this, (IPList) Activator.CreateInstance(col.Prop.PropertyType));
             }
         }
+        
+        public void Refresh()
+        {
+            Load();
+        }
 
         private void UpdateId(long value)
         {

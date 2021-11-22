@@ -24,9 +24,15 @@ namespace Persistence
         }
 
 
-        public T Get<T> (long? id) where T: DAO, new()
+        public T Get<T> (long? id) where T: DAO
         {
-            return id.HasValue ? GetStorage<T>().Get(id.Value) : new T() {Context = this};
+            if (id.HasValue)
+            {
+                return GetStorage<T>().Get(id.Value);
+            }
+            var dao = Activator.CreateInstance<T>();
+            dao.Context = this;
+            return dao;
         }
         
         public PList<T> Get<T> (string whereQuery) where T: DAO
@@ -66,6 +72,13 @@ namespace Persistence
             var storage = (IStorage) Activator.CreateInstance(generic, this);
             Storages.Add(table, storage);
             return storage;
+        }
+
+        public T GetOrRefresh<T>(long id) where T : DAO
+        {
+            var dao = Get<T>(id);
+            dao.Refresh();
+            return dao;
         }
     }
 }
