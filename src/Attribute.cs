@@ -3,15 +3,21 @@ using System.Data;
 
 namespace Persistence
 {
+    public abstract class PersistenceAttribute : Attribute
+    {
+    }
+    
+    [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = false)]
+    public class UniqueIndexAttribute : FieldAttribute
+    {
+        
+    }
+    
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
-    public class ViewAttribute : Attribute
+    public class ViewAttribute : PersistenceAttribute
     {
         public string ViewName { get; set; }
         public string Schema { get; set; } = Persistence.Sql.DefaultSchema;
-    }
-    
-    public abstract class PersistenceAttribute : Attribute
-    {
     }
 
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]

@@ -18,6 +18,16 @@ namespace Persistence
 
             return l;
         }
+
+        public static void Convert(this Field field, ref object value)
+        {
+            value = field.IsEnum ? System.Convert.ToInt32(value) : Type.GetTypeCode(field.Prop.PropertyType) switch
+            {
+                TypeCode.Boolean => value.Equals(1ul),
+                _ => value
+            };
+        }
+
         public static object Read(this IDataRecord data, string field)
         {
             try

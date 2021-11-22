@@ -43,7 +43,13 @@ namespace Persistence
         }
 
         public bool Load() => Load(Table);
-        public bool Save() => Save(Table);
+        public bool Save()
+        {
+            var res = Save(Table);
+            IsChanged = false;
+            return res;
+        }
+
         public bool Delete() => Delete(Table);
 
         static DAO()
@@ -181,8 +187,7 @@ namespace Persistence
                         break;
                     case Field field:
                         value = reader.Read(field.SqlName);
-                        if (field.IsEnum)
-                            value = Convert.ToInt32(value);
+                        field.Convert(ref value);
                         if (field is PrimaryKey)
                             LastKeys[field] = value;
                         field.Prop.SetSqlValue(this, value);
@@ -347,7 +352,6 @@ namespace Persistence
                 _storage.AddOrUpdate(this);
             }
             _NotLoaded = false;
-            IsChanged = false;
             return true;
         }
 

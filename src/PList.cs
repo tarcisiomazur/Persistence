@@ -295,7 +295,7 @@ namespace Persistence
             return true;
         }
 
-        public bool Load(uint first, uint length)
+        public bool Load(uint first = 0, uint length = 1 << 31 - 1)
         {
             if (_oneToMany == null || _root == null) return false;
             var whereClause = "";
