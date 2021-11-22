@@ -23,5 +23,9 @@ namespace Persistence
             _functions.Clear();
         }
 
+        public void Clear()
+        {
+            _functions.Clear();
+        }
     }
 }

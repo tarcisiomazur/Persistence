@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
@@ -13,7 +14,7 @@ namespace Persistence
 {
     public static class PListLinq
     {
-        public static PList<T> ToPList<T>(this IEnumerable<T> sequence) where T:DAO
+        public static PList<T> ToPList<T>(this IList<T> sequence) where T:DAO
         {
             return new PList<T>(sequence);
         }
@@ -25,39 +26,51 @@ namespace Persistence
         protected void SetKey(string key, object value);
         protected Type GetMemberType();
         protected internal void LoadList(OneToMany oneToMany, DAO obj);
+        internal void BuildList(DbDataReader reader);
         public bool Save();
         public bool Delete();
-        public void BuildList(DbDataReader reader);
+        public bool IsChanged { get; set; }
     }
     
-    public sealed class PList<T> : ObservableCollection<T>, IPList where T : DAO
+    public sealed class PList<T> : BindingList<T>, IPList where T : DAO
     {
         private OneToMany _oneToMany;
         private DAO _root;
         private string _whereQuery;
         private List<T> _toDelete = new List<T>();
-        private readonly Table _table;
-        private readonly Type _type;
+        private Table _table;
+        private Type _type;
+        public PersistenceContext Context { get; set; }
+        internal IStorage _storage => Context?.GetStorage(_table);
+
+        public bool IsChanged { get; set; }
 
         public PList()
         {
-            _type = typeof(T);
-            _table = Persistence.Tables[_type.Name];
-        }
-        
-        public PList(IEnumerable<T> collection): base(collection)
-        {
-            _type = typeof(T);
-            _table = Persistence.Tables[_type.Name];
+            Initialize();
         }
 
-        public PList(string whereQuery, uint offset = 0, uint length = 1 << 31 - 1)
+        public PList(IList<T> collection): base(collection)
+        {
+            Initialize();
+        }
+
+        public PList(string whereQuery)
+        {
+            Initialize();
+            GetWhereQuery(whereQuery);
+        }
+        
+        private void Initialize()
         {
             _type = typeof(T);
             _table = Persistence.Tables[_type.Name];
-            _whereQuery = whereQuery;
-            var reader = Persistence.Sql.SelectWhereQuery(_table, whereQuery, offset, length);
-            BuildList(reader);
+            ListChanged += OnListChanged;
+        }
+
+        private void OnListChanged(object sender, ListChangedEventArgs e)
+        {
+            IsChanged = true;
         }
 
         // Sets or Gets the element at the given index.
@@ -122,19 +135,6 @@ namespace Persistence
         public new void CopyTo(T[] array)
             => base.CopyTo(array, 0);
 
-        // Copies this List into array, which must be of a 
-        // compatible array type.  
-        void ICollection.CopyTo(Array array, int arrayIndex)
-        {
-            base.CopyTo((T[]) array,arrayIndex);
-        }
-        
-
-        public new void CopyTo(T[] array, int arrayIndex)
-        {
-            base.CopyTo(array, arrayIndex);
-        }
-        
         public new int FindLastIndex(Predicate<T> match)
             => FindLastIndex(Count - 1, Count, match);
 
@@ -217,13 +217,14 @@ namespace Persistence
             Clear();
             _oneToMany = oneToMany;
             _root = obj;
+            Context = obj.Context;
             if (oneToMany.Fetch == Fetch.Eager)
             {
                 Load(0, oneToMany.ItemsByAccess);
             }
         }
 
-        public void BuildList(DbDataReader reader)
+        void IPList.BuildList(DbDataReader reader)
         {
             Clear();
             try
@@ -231,9 +232,17 @@ namespace Persistence
                 var runLater = new RunLater();
                 while (reader.Read())
                 {
-                    var instance = Activator.CreateInstance<T>();
+                    var instance = (DAO) Activator.CreateInstance<T>();
+                    instance.Context = Context;
                     instance.Build(reader, _table, runLater);
-                    Add(instance);
+                    if (_storage is not null)
+                    {
+                        if (!_storage.TryAdd(ref instance))
+                        {
+                            runLater.Clear();
+                        }
+                    }
+                    Add((T) instance);
                 }
 
                 reader.Close();
@@ -248,7 +257,9 @@ namespace Persistence
 
         public bool Save()
         {
-            return this.All(dao => dao.Save());
+            var result = this.All(dao => dao.Save());
+            IsChanged = false;
+            return result;
         }
         
         public bool Delete(int index)
@@ -293,7 +304,7 @@ namespace Persistence
                 whereClause += $"{key} = {field.Prop.GetValue(_root)}";
             }
             var reader = Persistence.Sql.SelectWhereQuery(_table, whereClause, first, length);
-            BuildList(reader);
+            ((IPList) this).BuildList(reader);
             return true;
         }
 
@@ -311,6 +322,13 @@ namespace Persistence
             return Count == 0;
         }
 
+        public void GetWhereQuery(string whereQuery, uint offset = 0, uint length = 1 << 31 - 1)
+        {
+            _whereQuery = whereQuery;
+            var reader = Persistence.Sql.SelectWhereQuery(_table, whereQuery, offset, length);
+            ((IPList) this).BuildList(reader);
+        }
+        
         public static PList<T> FindWhereQuery(string whereQuery)
         {
             return new PList<T>(whereQuery);

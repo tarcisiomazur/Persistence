@@ -12,13 +12,27 @@ namespace Persistence
     public class DAO : INotifyPropertyChanged
     {
         internal static bool Init() => true;
-        private Dictionary<PropColumn, object> LastKeys;
-        private Table __table => Persistence.Tables[GetType().Name];
-        private Storage _storage => Persistence.Storage[__table];
+        internal readonly Dictionary<PropColumn, object> LastKeys;
+        private HashSet<string> LastChanges;
+        internal Table Table => Persistence.Tables[GetType().Name];
+        internal IStorage _storage => Context?.GetStorage(Table);
         private long _Version;
         private long _id;
-        private bool _NotLoaded { get; set; }
+        private bool _NotLoaded { get; set; } = true;
+        private bool _isChanged;
+
+        public bool IsChanged
+        {
+            get => _isChanged;
+            set
+            {
+                _isChanged = value;
+                if (!_isChanged) LastChanges.Clear();
+            }
+        }
+
         private bool Loaded => !_NotLoaded;
+        internal bool Persisted { get; set; }
         public event PropertyChangedEventHandler PropertyChanged;
 
         [DefaultPk(FieldName = "Id", FieldType = SqlDbType.BigInt, AutoIncrement = true, DefaultValue = 0)]
@@ -28,10 +42,9 @@ namespace Persistence
             set => UpdateId(value);
         }
 
-        public bool Load() => Load(__table);
-        public bool Save() => Save(__table);
-        public bool Persist() => Persist(__table);
-        public bool Delete() => Delete(__table);
+        public bool Load() => Load(Table);
+        public bool Save() => Save(Table);
+        public bool Delete() => Delete(Table);
 
         static DAO()
         {
@@ -41,6 +54,8 @@ namespace Persistence
         protected DAO()
         {
             LastKeys = new Dictionary<PropColumn, object>();
+            LastChanges = new HashSet<string>();
+            IsChanged = true;
             ctor(GetType());
         }
 
@@ -53,6 +68,11 @@ namespace Persistence
             foreach (var col in table.Columns.OfType<PrimaryKey>())
             {
                 LastKeys.Add(col, null);
+            }
+
+            foreach (var col in table.Columns.OfType<OneToMany>())
+            {
+                col.Prop.SetValue(this, (IPList) Activator.CreateInstance(col.Prop.PropertyType));
             }
         }
 
@@ -93,6 +113,7 @@ namespace Persistence
 
         public static T? Load<T>(long id) where T : DAO
         {
+            Console.WriteLine($"Loading {typeof(T).Name} {id}");
             var obj = Activator.CreateInstance<T>();
             obj.Id = id;
             return obj.Load() ? obj : null;
@@ -123,6 +144,7 @@ namespace Persistence
                 {
                     case Relationship rel:
                         var dao = (DAO) Activator.CreateInstance(rel.Prop.PropertyType);
+                        dao.Context = Context;
                         var isNull = false;
                         foreach (var (name, fk) in rel.Links)
                         {
@@ -135,13 +157,17 @@ namespace Persistence
 
                             fk.Prop.SetSqlValue(dao, value);
                         }
+                        if (dao._storage == null || dao._storage.TryAdd(ref dao))
+                        {
+                            if (isNull) continue;
 
-                        if (isNull) continue;
-
-                        if (rel.Fetch == Fetch.Eager)
-                            runLater.Later(() => dao.Load());
-                        else
-                            dao._NotLoaded = true;
+                            if (rel.Fetch == Fetch.Eager)
+                                runLater.Later(() => dao.Load());
+                            else
+                                dao._NotLoaded = true;
+                        }
+                        
+                        
                         rel.Prop.SetValue(this, dao);
                         break;
                     case OneToMany o2m:
@@ -161,20 +187,36 @@ namespace Persistence
             }
 
             _NotLoaded = false;
+            IsChanged = false;
         }
 
-        public void Free()
+        internal void Free()
         {
+            if (_storage == null)
+                return;
             _storage.Free(this);
-        }
-
-        private bool Persist(Table table)
-        {
-            return Save(table) && Load(table);
+            Context = null;
+            foreach (var column in Table.Columns)
+            {
+                DAO dao = null;
+                switch (column)
+                {
+                    case OneToMany otm:
+                        if (otm.Cascade.HasFlag(Cascade.FREE))
+                            dao = otm.Prop.GetValue(this) as DAO; 
+                        break;
+                    case Relationship rel:
+                        if(rel.Cascade.HasFlag(Cascade.FREE))
+                            dao = rel.Prop.GetValue(this) as DAO; 
+                        break;
+                }
+                dao?.Free();
+            }
         }
 
         private bool Load(Table table)
         {
+            Console.WriteLine($"Loading T {table.Name} + {Id}");
             var keys = table.PrimaryKeys.ToDictionary(pk => pk.SqlName, pk => pk.Prop.GetValue(this));
             try
             {
@@ -183,7 +225,6 @@ namespace Persistence
                 if (reader.Read())
                 {
                     Build(reader, table, runLater);
-                    _storage.Add(this);
                     reader.Close();
                     runLater.Run();
                 }
@@ -207,33 +248,17 @@ namespace Persistence
             if (table.IsSpecialization && !Save(table.BaseTable))
                 return false;
             var fields = new Dictionary<string, object>();
-            if (table.Versioned)
-                fields.Add("__Version", _Version);
 
-            var keyChange = false;
-            foreach (var column in table.Columns)
+            foreach (var column in table.Columns.Where(col => col is OneToMany || LastChanges.Contains(col.Prop.Name)))
             {
                 var pi = column.Prop;
                 var obj = pi.GetValue(this);
                 switch (column)
                 {
-                    case PrimaryKey pk:
-                        if (obj == null)
-                            throw new PersistenceException("The PrimaryKey cannot be null");
-                        if (obj.Equals(pk.DefaultValue))
-                            if (!pk.AutoIncrement)
-                                throw new PersistenceException(
-                                    "The PrimaryKey must be different from the default");
-                            else
-                                continue;
-
-                        var lastKey = LastKeys[column];
-                        if (lastKey != null && !lastKey.Equals(obj))
-                            keyChange = true;
-                        fields.Add(pk.SqlName, obj);
+                    case PrimaryKey:
                         break;
                     case Field fa:
-                        if(fa.ReadOnly)
+                        if (fa.ReadOnly)
                             break;
                         if (fa.IsEnum)
                             obj = (int) obj;
@@ -254,6 +279,8 @@ namespace Persistence
                     case OneToMany list:
                         if (!list.Cascade.HasFlag(Cascade.SAVE) || obj == null) break;
                         var l = obj as IPList;
+                        if (!l.IsChanged) break;
+                        IsChanged = true;
                         foreach (var o in l)
                         {
                             if (o != null)
@@ -265,19 +292,46 @@ namespace Persistence
                 }
             }
 
+            if (!IsChanged && (fields.Count == 0 || !table.Versioned))
+            {
+                return true;
+            }
+
+            if (table.Versioned)
+                fields.Add("__Version", _Version);
+
+            var keyChange = false;
+
+            foreach (var column in table.Columns.OfType<PrimaryKey>())
+            {
+                var obj = column.Prop.GetValue(this);
+                var lastKey = LastKeys[column];
+                if (obj == null)
+                    throw new PersistenceException("The PrimaryKey cannot be null");
+                if (obj.Equals(column.DefaultValue))
+                    if (!column.AutoIncrement)
+                        throw new PersistenceException(
+                            "The PrimaryKey must be different from the default");
+                    else
+                        continue;
+                if (lastKey != null && !lastKey.Equals(obj))
+                    keyChange = true;
+                fields.Add(column.SqlName, obj);
+            }
+
             long res;
             try
             {
-                if (keyChange)
+                if (Loaded)
                     res = Persistence.Sql.Update(table, fields, LastKeys);
                 else
-                    res = Persistence.Sql.InsertOrUpdate(table, fields);
+                    res = Persistence.Sql.Insert(table, fields);
             }
             catch (Exception ex)
             {
                 if (ex is SQLException {ErrorCode: SQLException.ErrorCodeVersion})
                     return false;
-                
+
                 throw new PersistenceException($"Error on save object {ToString()}", ex)
                     {ErrorCode = ex is SQLException sqlex ? sqlex.ErrorCode : 0};
             }
@@ -285,6 +339,12 @@ namespace Persistence
             if (res == -1) return false;
             UpdateIdentifiers(table, res);
             later.Run();
+            if (_storage is not null)
+            {
+                _storage.AddOrUpdate(this);
+            }
+            _NotLoaded = false;
+            IsChanged = false;
             return true;
         }
 
@@ -349,6 +409,7 @@ namespace Persistence
 
         protected virtual void OnPropertyChanged([CallerMemberName] string propertyName = null)
         {
+            LastChanges.Add(propertyName);
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
 
@@ -382,7 +443,7 @@ namespace Persistence
 
             var reader = Persistence.Sql.Select(table, field, 0, 1 << 31 - 1);
             var list = new PList<T>();
-            list.BuildList(reader);
+            ((IPList) list).BuildList(reader);
             return list;
         }
 
@@ -390,5 +451,7 @@ namespace Persistence
         {
             return new PList<T>(whereQuery);
         }
+
+        public PersistenceContext Context;
     }
 }

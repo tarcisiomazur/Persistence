@@ -21,7 +21,7 @@ namespace Persistence
         protected internal bool ValidatePrimaryKeys(Table table, List<PrimaryKey> primaryKeys);
         protected internal bool ValidadeForeignKeys(Table table, Relationship relationship);
         protected internal string ConvertValueToString(object value);
-        protected internal long InsertOrUpdate(Table table, Dictionary<string, object> fields);
+        protected internal long Insert(Table table, Dictionary<string, object> fields);
         protected internal long Update(Table table, Dictionary<string, object> fields,
             Dictionary<PropColumn, object> keys);
         protected internal DbDataReader Select(Table table, Dictionary<string, object> keys, uint offset, uint length);

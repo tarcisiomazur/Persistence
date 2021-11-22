@@ -9,7 +9,6 @@ namespace Persistence
     public class Persistence
     {
         internal static readonly Dictionary<string, Table> Tables = new Dictionary<string, Table>();
-        internal static readonly Dictionary<Table, Storage> Storage = new Dictionary<Table, Storage>();
         internal static ISQL Sql;
         internal static readonly PrimaryKey DefaultPkColumn;
 
@@ -119,7 +118,6 @@ namespace Persistence
                 column.Persisted = true;
             }
 
-            Storage.Add(table, new Storage(table.DefaultPk));
         }
 
         private static void BuildVersionedField(Table table)

@@ -17,12 +17,14 @@ namespace Persistence
         private readonly TableAttribute _tableAttribute;
         protected internal Dictionary<string, PropColumn>.ValueCollection Columns => _columns.Values;
         protected internal readonly List<PrimaryKey> PrimaryKeys;
+        protected internal readonly Dictionary<string, PrimaryKey> PrimaryKeyStrings;
         protected internal readonly Dictionary<string, Relationship> Relationships;
 
         public Table(TableAttribute tableAttribute)
         {
             _tableAttribute = tableAttribute;
             PrimaryKeys = new List<PrimaryKey>();
+            PrimaryKeyStrings = new Dictionary<string, PrimaryKey>();
             Relationships = new Dictionary<string, Relationship>();
             _columns = new Dictionary<string, PropColumn>(StringComparer.InvariantCultureIgnoreCase);
         }
@@ -39,6 +41,7 @@ namespace Persistence
         public bool Versioned => _tableAttribute.VersionControl;
         public bool IsSpecialization { get; set; }
         public Table BaseTable { get; set; }
+        internal bool SingleKey => PrimaryKeyStrings.Count == 1;
 
         public void AddColumn(PropColumn propColumn)
         {
@@ -52,6 +55,7 @@ namespace Persistence
                 PrimaryKeys.Insert(0, primaryKey);
             else
                 PrimaryKeys.Add(primaryKey);
+            PrimaryKeyStrings.Add(primaryKey.Prop.Name, primaryKey);
             AddColumn(primaryKey);
         }
 
@@ -96,7 +100,7 @@ namespace Persistence
         public string ReferencedName { get;internal set; }
         public Type Type => Prop.PropertyType.GenericTypeArguments[0];
         public bool orphanRemoval { get; }
-        public uint ItemsByAccess { get; } = 1000;
+        public uint ItemsByAccess { get; } = 100000;
         public Cascade Cascade { get; }
         public Fetch Fetch { get; }
 

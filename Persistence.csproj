@@ -13,6 +13,7 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <PackageReference Include="BidirectionalDict" Version="1.2.0" />
         <PackageReference Include="MySql.Data" Version="8.0.25" />
         <PackageReference Include="OptimizedPriorityQueue" Version="5.1.0" />
     </ItemGroup>
