@@ -6,6 +6,7 @@
         <LangVersion>10</LangVersion>
         <PublishReadyToRun>true</PublishReadyToRun>
         <Authors>Tarcisio Mazur Junior</Authors>
+        <Nullable>enable</Nullable>
     </PropertyGroup>
 
     <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">

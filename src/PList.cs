@@ -2,12 +2,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Collections.ObjectModel;
-using System.Collections.Specialized;
 using System.ComponentModel;
-using System.Data;
 using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 
 namespace Persistence
@@ -34,14 +30,15 @@ namespace Persistence
     
     public sealed class PList<T> : BindingList<T>, IPList where T : DAO
     {
-        private OneToMany _oneToMany;
-        private DAO _root;
+        private OneToMany? _oneToMany { get; set; }
+        private bool OrphanRemoval => _oneToMany?.orphanRemoval ?? false;
+        private DAO? _root;
         private string _whereQuery;
         private List<T> _toDelete = new List<T>();
         private Table _table;
         private Type _type;
         public PersistenceContext Context { get; set; }
-        internal IStorage _storage => Context?.GetStorage(_table);
+        internal IStorage? _storage => Context?.GetStorage(_table);
 
         public bool IsChanged { get; set; }
 
@@ -185,6 +182,10 @@ namespace Persistence
         // decreased by one.
         public new bool Remove(T item)
         {
+            if (OrphanRemoval)
+            {
+                _toDelete.Add(item);
+            }
             return base.Remove(item);
         }
 
@@ -197,6 +198,10 @@ namespace Persistence
         // decreased by one.
         public new void RemoveAt(int index)
         {
+            if (OrphanRemoval)
+            {
+                _toDelete.Add(base[index]);
+            }
             base.RemoveAt(index);
         }
         
@@ -258,10 +263,15 @@ namespace Persistence
         public bool Save()
         {
             var result = this.All(dao => dao.Save());
+            if (result && OrphanRemoval)
+            {
+                _toDelete.ForEach(dao => dao.Delete());
+                _toDelete.Clear();
+            }
             IsChanged = false;
             return result;
         }
-        
+
         public bool Delete(int index)
         {
             if (this[index].Delete()) return false;
@@ -290,13 +300,12 @@ namespace Persistence
 
         public bool Delete(T value)
         {
-            if (!value.Delete()) return false;
-            Remove(value);
-            return true;
+            return base.Remove(value) && value.Delete();
         }
 
         public bool Load(uint first = 0, uint length = 1 << 31 - 1)
         {
+            _toDelete.Clear();
             if (_oneToMany == null || _root == null) return false;
             var whereClause = "";
             foreach (var (key, field) in _oneToMany.Relationship.Links)
@@ -310,6 +319,9 @@ namespace Persistence
 
         public void RemoveAll(Predicate<T> match)
         {
+            if(OrphanRemoval)
+                _toDelete.AddRange(this.Items);
+            base.Clear();
             foreach (var dao in this.ToImmutableArray().Where(dao => match(dao)))
             {
                 Remove(dao);
@@ -318,7 +330,10 @@ namespace Persistence
 
         public bool DeleteAll()
         {
-            RemoveAll(dao => dao.Delete());
+            foreach (var dao in this.ToImmutableArray())
+            {
+                Delete(dao);
+            }
             return Count == 0;
         }
 

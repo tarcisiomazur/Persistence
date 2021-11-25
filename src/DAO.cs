@@ -47,6 +47,7 @@ namespace Persistence
         {
             var res = Save(Table);
             IsChanged = false;
+            _NotLoaded = false;
             return res;
         }
 
@@ -274,15 +275,12 @@ namespace Persistence
                         break;
                     case Relationship relationship:
                         var dao = (DAO) obj;
-                        if (obj == null)
-                            if (relationship.Nullable == Nullable.NotNull)
+                        if (obj == null && relationship.Nullable == Nullable.NotNull)
                                 throw new PersistenceException($"Property value {relationship.Prop} cannot be null");
-                            else
-                                continue;
-                        if (relationship.Cascade.HasFlag(Cascade.SAVE) && dao.Loaded && !dao.Save())
+                        if (relationship.Cascade.HasFlag(Cascade.SAVE) && dao is not null && dao.Loaded && !dao.Save())
                             continue;
                         foreach (var (name, fk) in relationship.Links)
-                            fields.Add(name, fk.Prop.GetValue(obj));
+                            fields.Add(name, obj is null ? null: fk.Prop.GetValue(obj));
                         break;
                     case OneToMany list:
                         if (!list.Cascade.HasFlag(Cascade.SAVE) || obj == null) break;
@@ -309,10 +307,11 @@ namespace Persistence
                 fields.Add("__Version", _Version);
 
             var keyChange = false;
-
+            var keyValues = new Dictionary<PropColumn, object>();
             foreach (var column in table.Columns.OfType<PrimaryKey>())
             {
                 var obj = column.Prop.GetValue(this);
+                keyValues.Add(column, obj);
                 var lastKey = LastKeys[column];
                 if (obj == null)
                     throw new PersistenceException("The PrimaryKey cannot be null");
@@ -323,7 +322,9 @@ namespace Persistence
                     else
                         continue;
                 if (lastKey != null && !lastKey.Equals(obj))
+                {
                     keyChange = true;
+                }
                 fields.Add(column.SqlName, obj);
             }
 
@@ -331,7 +332,7 @@ namespace Persistence
             try
             {
                 if (Loaded)
-                    res = Persistence.Sql.Update(table, fields, LastKeys);
+                    res = Persistence.Sql.Update(table, fields, keyValues);
                 else
                     res = Persistence.Sql.Insert(table, fields);
             }
@@ -351,7 +352,6 @@ namespace Persistence
             {
                 _storage.AddOrUpdate(this);
             }
-            _NotLoaded = false;
             return true;
         }
 
