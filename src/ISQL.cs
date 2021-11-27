@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Data;
 using System.Data.Common;
 
 namespace Persistence
@@ -21,11 +22,11 @@ namespace Persistence
         protected internal bool ValidatePrimaryKeys(Table table, List<PrimaryKey> primaryKeys);
         protected internal bool ValidadeForeignKeys(Table table, Relationship relationship);
         protected internal string ConvertValueToString(object value);
-        protected internal long Insert(Table table, Dictionary<string, object> fields);
+        protected internal long Insert(Table table, Dictionary<string, object> fields, ref IDbTransaction transaction);
         protected internal long Update(Table table, Dictionary<string, object> fields,
-            Dictionary<PropColumn, object> keys);
+            Dictionary<PropColumn, object> keys, ref IDbTransaction transaction);
         protected internal DbDataReader Select(Table table, Dictionary<string, object> keys, uint offset, uint length);
-        protected internal bool Delete(Table table, Dictionary<string, object> keys);
+        protected internal bool Delete(Table table, Dictionary<string, object> keys, ref IDbTransaction dbTransaction);
         protected internal uint SelectCount(Table table, Dictionary<string, object> keys);
         protected internal uint SelectCountWhereQuery(Table table, string likeQuery);
         protected internal KeyType GetKeyType(string key);

@@ -3,23 +3,28 @@ using Priority_Queue;
 
 namespace Persistence
 {
-    public class RunLater
+    internal class RunLater
     {
-        private readonly SimplePriorityQueue<Action, int> _functions = new SimplePriorityQueue<Action, int>();
+        private readonly SimplePriorityQueue<Action<WorkerExecutor>, int> _functions = new ();
+        private WorkerExecutor _executor;
+        public RunLater(WorkerExecutor executor)
+        {
+            _executor = executor;
+        }
 
-        public void Later(short priority, Action action)
+        public void Later(short priority, Action<WorkerExecutor> action)
         {
             _functions.Enqueue(action, priority);
         }
 
-        public void Later(Action action)
+        public void Later(Action<WorkerExecutor> action)
         {
             _functions.Enqueue(action, 0);
         }
 
         public void Run()
         {
-            _functions.Do(action => action());
+            _functions.Do(action => action(_executor));
             _functions.Clear();
         }
 

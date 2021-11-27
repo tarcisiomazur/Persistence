@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.ComponentModel;
+using System.Data;
 using System.Data.Common;
 using System.Linq;
 
@@ -15,6 +16,14 @@ namespace Persistence
             return new PList<T>(sequence);
         }
 
+        public static void Do<T>(this IList<T> sequence, Action<T> action) where T:DAO
+        {
+            for (var i = 0; i < sequence.Count; i++)
+            {
+                
+            }
+        }
+
     }
 
     internal interface IPList: IList
@@ -24,6 +33,7 @@ namespace Persistence
         protected internal void LoadList(OneToMany oneToMany, DAO obj);
         internal void BuildList(DbDataReader reader);
         public bool Save();
+        internal bool Save(WorkerExecutor executor);
         public bool Delete();
         public bool IsChanged { get; set; }
     }
@@ -234,7 +244,7 @@ namespace Persistence
             Clear();
             try
             {
-                var runLater = new RunLater();
+                var runLater = new RunLater(null);
                 while (reader.Read())
                 {
                     var instance = (DAO) Activator.CreateInstance<T>();
@@ -262,13 +272,31 @@ namespace Persistence
 
         public bool Save()
         {
-            var result = this.All(dao => dao.Save());
+            var executor = new WorkerExecutor();
+            var result = ((IPList) this).Save(executor);
+            
+            if (result && executor.Commit())
+            {
+                return true;
+            }
+            else
+            {
+                executor.Rollback();
+                return false;
+            }
+        }
+
+        bool IPList.Save(WorkerExecutor executor)
+        {
+            var result = this.All(dao => dao.Save(dao.Table, executor));
             if (result && OrphanRemoval)
             {
-                _toDelete.ForEach(dao => dao.Delete());
-                _toDelete.Clear();
+                result = _toDelete.Where(d=> d.Loaded).All(dao => dao.Delete(dao.Table, executor));
+                executor.OnCommit += () => _toDelete.Clear();
             }
-            IsChanged = false;
+
+            executor.OnCommit += () => IsChanged = false;
+
             return result;
         }
 
@@ -316,12 +344,12 @@ namespace Persistence
             ((IPList) this).BuildList(reader);
             return true;
         }
+        
 
         public void RemoveAll(Predicate<T> match)
         {
             if(OrphanRemoval)
                 _toDelete.AddRange(this.Items);
-            base.Clear();
             foreach (var dao in this.ToImmutableArray().Where(dao => match(dao)))
             {
                 Remove(dao);

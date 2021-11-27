@@ -34,5 +34,6 @@ namespace Persistence
             StreamingContext context) : base(info, context)
         {
         }
+        
     }
 }

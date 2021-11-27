@@ -47,6 +47,11 @@ namespace Persistence
             {
                 obj = obj == null || obj.Equals(0);
             }
+            else if(obj is string {Length: > 0} str && propertyInfo.PropertyType == typeof(char))
+            {
+                obj = str[0];
+            }
+
             propertyInfo.SetValue(dao, obj);
         }
 

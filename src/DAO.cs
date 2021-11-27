@@ -31,7 +31,7 @@ namespace Persistence
             }
         }
 
-        private bool Loaded => !_NotLoaded;
+        internal bool Loaded => !_NotLoaded;
         internal bool Persisted { get; set; }
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -43,15 +43,32 @@ namespace Persistence
         }
 
         public bool Load() => Load(Table);
+
         public bool Save()
         {
-            var res = Save(Table);
-            IsChanged = false;
-            _NotLoaded = false;
-            return res;
+            var we = new WorkerExecutor();
+            var res = Save(Table, we);
+            if (res && we.Commit())
+            {
+                return res;
+            }
+
+            we.Rollback();
+            return false;
         }
 
-        public bool Delete() => Delete(Table);
+        public bool Delete()
+        {
+            var executor = new WorkerExecutor();
+            var res = Delete(Table, executor);
+            if (res && executor.Commit())
+            {
+                return true;
+            }
+
+            executor.Rollback();
+            return false;
+        }
 
         static DAO()
         {
@@ -82,7 +99,7 @@ namespace Persistence
                 col.Prop.SetValue(this, (IPList) Activator.CreateInstance(col.Prop.PropertyType));
             }
         }
-        
+
         public void Refresh()
         {
             Load();
@@ -93,10 +110,9 @@ namespace Persistence
             _id = value;
         }
 
-        private bool Delete(Table table)
+        internal bool Delete(Table table, WorkerExecutor executor)
         {
             var keys = new Dictionary<string, object>();
-
             foreach (var column in table.Columns)
             {
                 switch (column)
@@ -120,7 +136,10 @@ namespace Persistence
                 }
             }
 
-            return Persistence.Sql.Delete(table, keys) && (!table.IsSpecialization || Delete(table.BaseTable));
+            var transaction = executor.DbTransaction;
+            var result = Persistence.Sql.Delete(table, keys, ref transaction);
+            executor.DbTransaction = transaction;
+            return result && (!table.IsSpecialization || Delete(table.BaseTable, executor));
         }
 
         public static T? Load<T>(long id) where T : DAO
@@ -147,7 +166,7 @@ namespace Persistence
             }
 
             if (table.IsSpecialization)
-                runLater.Later(() => Load(table.BaseTable));
+                runLater.Later(_ => Load(table.BaseTable));
 
             foreach (var column in table.Columns)
             {
@@ -168,23 +187,24 @@ namespace Persistence
 
                             fk.Prop.SetSqlValue(dao, value);
                         }
+
                         if (dao._storage == null || dao._storage.TryAdd(ref dao))
                         {
                             if (isNull) continue;
 
                             if (rel.Fetch == Fetch.Eager)
-                                runLater.Later(() => dao.Load());
+                                runLater.Later(_ => dao.Load());
                             else
                                 dao._NotLoaded = true;
                         }
-                        
-                        
+
+
                         rel.Prop.SetValue(this, dao);
                         break;
                     case OneToMany o2m:
                         var obj = (IPList) Activator.CreateInstance(o2m.Prop.PropertyType);
                         o2m.Prop.SetValue(this, obj);
-                        runLater.Later(10, () => obj.LoadList(o2m, this));
+                        runLater.Later(10, _ => obj.LoadList(o2m, this));
                         break;
                     case Field field:
                         value = reader.Read(field.SqlName);
@@ -213,13 +233,14 @@ namespace Persistence
                 {
                     case OneToMany otm:
                         if (otm.Cascade.HasFlag(Cascade.FREE))
-                            dao = otm.Prop.GetValue(this) as DAO; 
+                            dao = otm.Prop.GetValue(this) as DAO;
                         break;
                     case Relationship rel:
-                        if(rel.Cascade.HasFlag(Cascade.FREE))
-                            dao = rel.Prop.GetValue(this) as DAO; 
+                        if (rel.Cascade.HasFlag(Cascade.FREE))
+                            dao = rel.Prop.GetValue(this) as DAO;
                         break;
                 }
+
                 dao?.Free();
             }
         }
@@ -230,7 +251,7 @@ namespace Persistence
             try
             {
                 var reader = Persistence.Sql.Select(table, keys, 0, 1);
-                var runLater = new RunLater();
+                var runLater = new RunLater(null);
                 if (reader.Read())
                 {
                     Build(reader, table, runLater);
@@ -251,10 +272,10 @@ namespace Persistence
             return true;
         }
 
-        private bool Save(Table table)
+        internal bool Save(Table table, WorkerExecutor executor)
         {
-            var later = new RunLater();
-            if (table.IsSpecialization && !Save(table.BaseTable))
+            var later = new RunLater(executor);
+            if (table.IsSpecialization && !Save(table.BaseTable, executor))
                 return false;
             var fields = new Dictionary<string, object>();
 
@@ -276,11 +297,12 @@ namespace Persistence
                     case Relationship relationship:
                         var dao = (DAO) obj;
                         if (obj == null && relationship.Nullable == Nullable.NotNull)
-                                throw new PersistenceException($"Property value {relationship.Prop} cannot be null");
-                        if (relationship.Cascade.HasFlag(Cascade.SAVE) && dao is not null && dao.Loaded && !dao.Save())
+                            throw new PersistenceException($"Property value {relationship.Prop} cannot be null");
+                        if (relationship.Cascade.HasFlag(Cascade.SAVE) && dao is not null &&
+                            !dao.Save(dao.Table, executor))
                             continue;
                         foreach (var (name, fk) in relationship.Links)
-                            fields.Add(name, obj is null ? null: fk.Prop.GetValue(obj));
+                            fields.Add(name, obj is null ? null : fk.Prop.GetValue(obj));
                         break;
                     case OneToMany list:
                         if (!list.Cascade.HasFlag(Cascade.SAVE) || obj == null) break;
@@ -293,7 +315,7 @@ namespace Persistence
                                 list.Relationship.Prop.SetValue(o, this);
                         }
 
-                        later.Later(() => l.Save());
+                        later.Later((e) => l.Save(e));
                         break;
                 }
             }
@@ -325,22 +347,33 @@ namespace Persistence
                 {
                     keyChange = true;
                 }
+
                 fields.Add(column.SqlName, obj);
             }
 
             long res;
             try
             {
+                var transaction = executor.DbTransaction;
                 if (Loaded)
-                    res = Persistence.Sql.Update(table, fields, keyValues);
+                {
+                    res = Persistence.Sql.Update(table, fields, keyValues, ref transaction);
+                }
                 else
-                    res = Persistence.Sql.Insert(table, fields);
+                {
+                    res = Persistence.Sql.Insert(table, fields, ref transaction);
+                }
+
+                executor.DbTransaction = transaction;
             }
             catch (Exception ex)
             {
                 if (ex is SQLException {ErrorCode: SQLException.ErrorCodeVersion})
+                {
                     return false;
+                }
 
+                executor.Rollback();
                 throw new PersistenceException($"Error on save object {ToString()}", ex)
                     {ErrorCode = ex is SQLException sqlex ? sqlex.ErrorCode : 0};
             }
@@ -348,10 +381,14 @@ namespace Persistence
             if (res == -1) return false;
             UpdateIdentifiers(table, res);
             later.Run();
-            if (_storage is not null)
+            executor.OnCommit += () =>
             {
-                _storage.AddOrUpdate(this);
-            }
+                if (_storage is not null)
+                    _storage.AddOrUpdate(this);
+                IsChanged = false;
+                _NotLoaded = false;
+            };
+
             return true;
         }
 
