@@ -31,7 +31,7 @@ namespace Persistence
         protected void SetKey(string key, object value);
         protected Type GetMemberType();
         protected internal void LoadList(OneToMany oneToMany, DAO obj);
-        internal void BuildList(DbDataReader reader);
+        internal void BuildList(IPReader reader);
         public bool Save();
         internal bool Save(WorkerExecutor executor);
         public bool Delete();
@@ -239,13 +239,13 @@ namespace Persistence
             }
         }
 
-        void IPList.BuildList(DbDataReader reader)
+        void IPList.BuildList(IPReader reader)
         {
             Clear();
             try
             {
                 var runLater = new RunLater(null);
-                while (reader.Read())
+                while (reader.DataReader.Read())
                 {
                     var instance = (DAO) Activator.CreateInstance<T>();
                     instance.Context = Context;

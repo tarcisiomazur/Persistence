@@ -12,14 +12,14 @@ namespace Persistence
             var type = typeof(T);
             var attribute = type.GetCustomAttribute<ViewAttribute>();
             var reader = Persistence.Sql.SelectView(attribute.ViewName, attribute.Schema);
-
-            while (reader.Read())
+            
+            while (reader.DataReader.Read())
             {
                 var obj = Activator.CreateInstance<T>();
                 foreach (var propertyInfo in type.GetProperties())
                 {
                     var field = propertyInfo.GetCustomAttribute<FieldAttribute>();
-                    var value = reader.Read(field is not null? field.FieldName : propertyInfo.Name);
+                    var value = reader.DataReader.Read(field is not null? field.FieldName : propertyInfo.Name);
                     if (propertyInfo.PropertyType.IsEnum)
                     {
                         value = Convert.ToInt32(value);

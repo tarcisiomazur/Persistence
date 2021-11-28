@@ -35,7 +35,7 @@ namespace Persistence
         internal bool Persisted { get; set; }
         public event PropertyChangedEventHandler PropertyChanged;
 
-        [DefaultPk(FieldName = "Id", FieldType = SqlDbType.BigInt, AutoIncrement = true, DefaultValue = 0)]
+        [DefaultPk(FieldName = "Id", FieldType = SqlDbType.BigInt, AutoIncrement = true, DefaultValue = 0l)]
         public long Id
         {
             get => _id;
@@ -156,12 +156,12 @@ namespace Persistence
             return obj;
         }
 
-        internal void Build(IDataRecord reader, Table table, RunLater runLater)
+        internal void Build(IPReader reader, Table table, RunLater runLater)
         {
             object value;
             if (table.Versioned)
             {
-                value = reader.Read("__Version");
+                value = reader.DataReader.Read("__Version");
                 _Version = (long) (value ?? 0);
             }
 
@@ -178,7 +178,7 @@ namespace Persistence
                         var isNull = false;
                         foreach (var (name, fk) in rel.Links)
                         {
-                            value = reader.Read(name);
+                            value = reader.DataReader.Read(name);
                             if (value == null)
                             {
                                 isNull = true;
@@ -207,7 +207,7 @@ namespace Persistence
                         runLater.Later(10, _ => obj.LoadList(o2m, this));
                         break;
                     case Field field:
-                        value = reader.Read(field.SqlName);
+                        value = reader.DataReader.Read(field.SqlName);
                         field.Convert(ref value);
                         if (field is PrimaryKey)
                             LastKeys[field] = value;
@@ -252,7 +252,7 @@ namespace Persistence
             {
                 var reader = Persistence.Sql.Select(table, keys, 0, 1);
                 var runLater = new RunLater(null);
-                if (reader.Read())
+                if (reader.DataReader.Read())
                 {
                     Build(reader, table, runLater);
                     reader.Close();
@@ -279,7 +279,7 @@ namespace Persistence
                 return false;
             var fields = new Dictionary<string, object>();
 
-            foreach (var column in table.Columns.Where(col => col is OneToMany || LastChanges.Contains(col.Prop.Name)))
+            foreach (var column in table.Columns.Where(col => col is not PrimaryKey || LastChanges.Contains(col.Prop.Name)))
             {
                 var pi = column.Prop;
                 var obj = pi.GetValue(this);
@@ -300,7 +300,8 @@ namespace Persistence
                             throw new PersistenceException($"Property value {relationship.Prop} cannot be null");
                         if (relationship.Cascade.HasFlag(Cascade.SAVE) && dao is not null &&
                             !dao.Save(dao.Table, executor))
-                            continue;
+                            break;
+                        if (dao is not null && dao._NotLoaded) break;
                         foreach (var (name, fk) in relationship.Links)
                             fields.Add(name, obj is null ? null : fk.Prop.GetValue(obj));
                         break;
@@ -308,7 +309,6 @@ namespace Persistence
                         if (!list.Cascade.HasFlag(Cascade.SAVE) || obj == null) break;
                         var l = obj as IPList;
                         if (!l.IsChanged) break;
-                        IsChanged = true;
                         foreach (var o in l)
                         {
                             if (o != null)
@@ -380,7 +380,9 @@ namespace Persistence
 
             if (res == -1) return false;
             UpdateIdentifiers(table, res);
+            _NotLoaded = false;
             later.Run();
+            _NotLoaded = true;
             executor.OnCommit += () =>
             {
                 if (_storage is not null)

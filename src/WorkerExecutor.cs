@@ -13,6 +13,7 @@ namespace Persistence
             try
             {
                 DbTransaction?.Commit();
+                DbTransaction?.Connection.Close();
                 OnCommit?.Invoke();
                 return true;
             }

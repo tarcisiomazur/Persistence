@@ -29,8 +29,8 @@ namespace Persistence
                 return (IEnumerable<T>) list;
             }
 
-            var fields = reader.GetFields();
-            while (reader.Read())
+            var fields = reader.DataReader.GetFields();
+            while (reader.DataReader.Read())
             {
                 var obj = (T) Activator.CreateInstance(typeT);
                 foreach (var pi in typeT.GetProperties())
@@ -38,7 +38,7 @@ namespace Persistence
                     var index = fields.FindIndex(s => s.Equals(pi.Name, StringComparison.CurrentCultureIgnoreCase));
                     if (index>=0)
                     {
-                        pi.SetValue(obj,reader[index]);
+                        pi.SetValue(obj,reader.DataReader[index]);
                     }
                 }
                 r.Add(obj);
