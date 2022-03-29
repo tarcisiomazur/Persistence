@@ -80,10 +80,67 @@ namespace Persistence
 
     public static class CollectionExtension
     {
+        public static bool IsSimpleType(this Type type)
+        {
+            return
+                type.IsPrimitive ||
+                new Type[] {
+                    typeof(string),
+                    typeof(decimal),
+                    typeof(double),
+                    typeof(double),
+                    typeof(DateTime),
+                    typeof(DateTimeOffset),
+                    typeof(TimeSpan),
+                    typeof(Guid)
+                }.Contains(type) ||
+                type.IsEnum ||
+                Convert.GetTypeCode(type) != TypeCode.Object ||
+                (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>) && IsSimpleType(type.GetGenericArguments()[0]))
+                ;
+        }
+        public static IEnumerable<(TFirst First, TSecond Second)> Zip<TFirst, TSecond>(this IEnumerable<TFirst> first, IEnumerable<TSecond> second)
+        {
+            return ZipIterator(first, second);
+        }
+        private static IEnumerable<(TFirst First, TSecond Second)> ZipIterator<TFirst, TSecond>(IEnumerable<TFirst> first, IEnumerable<TSecond> second)
+        {
+            using (IEnumerator<TFirst> e1 = first.GetEnumerator())
+            using (IEnumerator<TSecond> e2 = second.GetEnumerator())
+            {
+                while (e1.MoveNext() && e2.MoveNext())
+                {
+                    yield return (e1.Current, e2.Current);
+                }
+            }
+        }
+        public static Dictionary<TKey, TElement> ToDictionary<TSource, TKey, TElement>(this IEnumerable<TSource> source, Func<TSource, TKey> keySelector, Func<TSource, TElement> elementSelector) where TKey : notnull =>
+            ToDictionary(source, keySelector, elementSelector, null);
+        public static Dictionary<TKey, TElement> ToDictionary<TSource, TKey, TElement>(this IEnumerable<TSource> source, Func<TSource, TKey> keySelector, Func<TSource, TElement> elementSelector, IEqualityComparer<TKey>? comparer) where TKey : notnull
+        {
+            int capacity = 0;
+            if (source is ICollection<TSource> collection)
+            {
+                capacity = collection.Count;
+                if (capacity == 0)
+                {
+                    return new Dictionary<TKey, TElement>(comparer);
+                }
+            }
+
+            Dictionary<TKey, TElement> d = new Dictionary<TKey, TElement>(capacity, comparer);
+            foreach (TSource element in source)
+            {
+                d.Add(keySelector(element), elementSelector(element));
+            }
+
+            return d;
+        }
+
         public static bool Like(this string str, string pattern,
             StringComparison cmp = StringComparison.CurrentCultureIgnoreCase)
         {
-            var split = (IEnumerator<string>)pattern.Split("%").ToList().GetEnumerator();
+            var split = (IEnumerator<string>)pattern.Split('%').ToList().GetEnumerator();
             if (!split.MoveNext()) return false;
             var current = split.Current;
             var offset = str.IndexOf(current ?? "", cmp);

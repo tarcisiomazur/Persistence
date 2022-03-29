@@ -34,6 +34,10 @@ namespace Persistence
             dao.Context = this;
             return dao;
         }
+        public T? TryGet<T> (long? id) where T: DAO
+        {
+            return id.HasValue ? GetStorage<T>().TryGet(id.Value) : null;
+        }
         
         public PList<T> Get<T> (string whereQuery) where T: DAO
         {
@@ -79,6 +83,11 @@ namespace Persistence
             var dao = Get<T>(id);
             dao.Refresh();
             return dao;
+        }
+
+        public PList<T> All<T>() where T : DAO
+        {
+            return GetStorage<T>().GetAll();
         }
     }
 }

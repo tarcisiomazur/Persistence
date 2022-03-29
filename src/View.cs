@@ -6,29 +6,42 @@ namespace Persistence
 {
     public static class View
     {
-        public static List<T> Execute<T> ()
+        public static List<T> Execute<T>()
         {
             var list = new List<T>();
             var type = typeof(T);
             var attribute = type.GetCustomAttribute<ViewAttribute>();
             var reader = Persistence.Sql.SelectView(attribute.ViewName, attribute.Schema);
-            
-            while (reader.DataReader.Read())
+            try
             {
-                var obj = Activator.CreateInstance<T>();
-                foreach (var propertyInfo in type.GetProperties())
+                while (reader.DataReader.Read())
                 {
-                    var field = propertyInfo.GetCustomAttribute<FieldAttribute>();
-                    var value = reader.DataReader.Read(field is not null? field.FieldName : propertyInfo.Name);
-                    if (propertyInfo.PropertyType.IsEnum)
+                    var obj = Activator.CreateInstance<T>();
+                    foreach (var propertyInfo in type.GetProperties())
                     {
-                        value = Convert.ToInt32(value);
+                        var field = propertyInfo.GetCustomAttribute<FieldAttribute>();
+                        var value = reader.DataReader.Read(field is not null ? field.FieldName : propertyInfo.Name);
+
+                        if (propertyInfo.PropertyType.IsEnum)
+                        {
+                            value = Convert.ToInt32(value);
+                        }
+                        else if (propertyInfo.PropertyType == typeof(bool))
+                        {
+                            value = value.Equals(1UL);
+                        }
+
+                        propertyInfo.SetValue(obj, value);
                     }
-                    propertyInfo.SetValue(obj, value);
+
+                    list.Add(obj);
                 }
-                list.Add(obj);
             }
-            reader.Close();
+            finally
+            {
+                reader.Close();
+            }
+
             return list;
         }
     }

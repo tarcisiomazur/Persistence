@@ -4,6 +4,21 @@ using System.Data.Common;
 
 namespace Persistence
 {
+    public class SelectParameters
+    {
+        public SelectParameters(Table table)
+        {
+            Table = table;
+        }
+
+        public Table Table { get; set; }
+        public Dictionary<string, object>? Keys{ get; set; }
+        public uint? Offset{ get; set; }
+        public uint? Length{ get; set; }
+        public string? Where { get; set; }
+        public string? OrderBy { get; set; }
+
+    }
     public interface IPReader
     {
         public DbDataReader DataReader { get; set; }
@@ -22,25 +37,25 @@ namespace Persistence
             AFTER_DELETE
         }
         public string DefaultSchema { get; }
-        protected internal bool ExistTable(Table table);
-        protected internal IPReader LoadTable(Table table);
-        protected internal bool ValidateField(Table table, Field field);
-        protected internal bool ValidatePrimaryKeys(Table table, List<PrimaryKey> primaryKeys);
-        protected internal bool ValidadeForeignKeys(Table table, Relationship relationship);
-        protected internal string ConvertValueToString(object value);
-        protected internal long Insert(Table table, Dictionary<string, object> fields, ref IDbTransaction transaction);
-        protected internal long Update(Table table, Dictionary<string, object> fields,
+        bool ExistTable(Table table);
+        IPReader LoadTable(Table table);
+        bool ValidateField(Table table, Field field);
+        bool ValidatePrimaryKeys(Table table, List<PrimaryKey> primaryKeys);
+        bool ValidadeForeignKeys(Table table, Relationship relationship);
+        string ConvertValueToString(object value);
+        long Insert(Table table, Dictionary<string, object> fields, ref IDbTransaction transaction);
+
+        long Update(Table table, Dictionary<string, object> fields,
             Dictionary<PropColumn, object> keys, ref IDbTransaction transaction);
-        protected internal IPReader Select(Table table, Dictionary<string, object> keys, uint offset, uint length);
-        protected internal bool Delete(Table table, Dictionary<string, object> keys, ref IDbTransaction dbTransaction);
-        protected internal uint SelectCount(Table table, Dictionary<string, object> keys);
-        protected internal uint SelectCountWhereQuery(Table table, string likeQuery);
-        protected internal KeyType GetKeyType(string key);
-        protected internal bool ExistTrigger(Table table, string triggerName);
-        protected internal void CreateTrigger(Table table, string sqlTrigger, string triggerName,
+        IPReader Select(SelectParameters param);
+        bool Delete(Table table, Dictionary<string, object> keys, ref IDbTransaction dbTransaction);
+        uint SelectCount(Table table, Dictionary<string, object> keys);
+        uint SelectCountWhereQuery(Table table, string likeQuery);
+        KeyType GetKeyType(string key);
+        bool ExistTrigger(Table table, string triggerName);
+        void CreateTrigger(Table table, string sqlTrigger, string triggerName,
             SqlTriggerType sqlTriggerType);
-        protected internal IPReader SelectWhereQuery(Table table, string likeQuery, uint offset, uint length);
-        protected internal IPReader ExecuteProcedure(string procedureName, Dictionary<string,object> parameters);
-        protected internal IPReader SelectView(string name, string schema);
+        IPReader ExecuteProcedure(string procedureName, Dictionary<string,object> parameters);
+        IPReader SelectView(string name, string schema);
     }
 }

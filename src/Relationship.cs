@@ -9,6 +9,8 @@ namespace Persistence
         public RelationshipType Type { get; set; }
         public string FkName => GetFkName();
         public Cascade Cascade { get; }
+        
+        public bool Updatable { get; set; }
         public Fetch Fetch { get; }
         public FkOptions OnDelete { get; }
         public FkOptions OnUpdate { get; }
@@ -20,9 +22,11 @@ namespace Persistence
             ReferenceName = m2o.ReferencedName;
             Nullable = m2o.Nullable;
             Cascade = m2o.Cascade;
+            Updatable = m2o.Updatable;
             Fetch = m2o.Fetch;
             Links = new Dictionary<string, Field>();
         }
+
         public Relationship()
         {
             Nullable = Nullable.NotNull;

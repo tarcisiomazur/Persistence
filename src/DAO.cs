@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -14,11 +15,16 @@ namespace Persistence
         internal static bool Init() => true;
         internal readonly Dictionary<PropColumn, object> LastKeys;
         private HashSet<string> LastChanges;
+
         internal Table Table => Persistence.Tables[GetType().Name];
+
         internal IStorage _storage => Context?.GetStorage(Table);
+
         private long _Version;
         private long _id;
+
         private bool _NotLoaded { get; set; } = true;
+
         private bool _isChanged;
 
         public bool IsChanged
@@ -32,7 +38,11 @@ namespace Persistence
         }
 
         internal bool Loaded => !_NotLoaded;
+
         internal bool Persisted { get; set; }
+
+        public PersistenceContext? Context { get; set; }
+
         public event PropertyChangedEventHandler PropertyChanged;
 
         [DefaultPk(FieldName = "Id", FieldType = SqlDbType.BigInt, AutoIncrement = true, DefaultValue = 0l)]
@@ -176,22 +186,22 @@ namespace Persistence
                         var dao = (DAO) Activator.CreateInstance(rel.Prop.PropertyType);
                         dao.Context = Context;
                         var isNull = false;
-                        foreach (var (name, fk) in rel.Links)
+                        foreach (var pair in rel.Links)
                         {
-                            value = reader.DataReader.Read(name);
+                            value = reader.DataReader.Read(pair.Key);
                             if (value == null)
                             {
                                 isNull = true;
                                 break;
                             }
 
-                            fk.Prop.SetSqlValue(dao, value);
+                            pair.Value.Prop.SetSqlValue(dao, value);
                         }
+
+                        if (isNull) continue;
 
                         if (dao._storage == null || dao._storage.TryAdd(ref dao))
                         {
-                            if (isNull) continue;
-
                             if (rel.Fetch == Fetch.Eager)
                                 runLater.Later(_ => dao.Load());
                             else
@@ -248,15 +258,17 @@ namespace Persistence
         private bool Load(Table table)
         {
             var keys = table.PrimaryKeys.ToDictionary(pk => pk.SqlName, pk => pk.Prop.GetValue(this));
+            IPReader reader = null;
             try
             {
-                var reader = Persistence.Sql.Select(table, keys, 0, 1);
+                reader = Persistence.Sql.Select(new SelectParameters(table) {Keys = keys, Length = 1});
                 var runLater = new RunLater(null);
                 if (reader.DataReader.Read())
                 {
                     Build(reader, table, runLater);
                     reader.Close();
                     runLater.Run();
+                    IsChanged = false;
                 }
                 else
                 {
@@ -266,6 +278,7 @@ namespace Persistence
             }
             catch (Exception ex)
             {
+                reader?.Close();
                 throw new PersistenceException("Error on Load", ex);
             }
 
@@ -279,7 +292,7 @@ namespace Persistence
                 return false;
             var fields = new Dictionary<string, object>();
 
-            foreach (var column in table.Columns.Where(col => col is not PrimaryKey || LastChanges.Contains(col.Prop.Name)))
+            foreach (var column in table.Columns)
             {
                 var pi = column.Prop;
                 var obj = pi.GetValue(this);
@@ -292,7 +305,8 @@ namespace Persistence
                             break;
                         if (fa.IsEnum)
                             obj = (int) obj;
-                        fields.Add(fa.SqlName, obj);
+                        if (LastChanges.Contains(column.Prop.Name) || column is UniqueIndex)
+                            fields.Add(fa.SqlName, obj);
                         break;
                     case Relationship relationship:
                         var dao = (DAO) obj;
@@ -301,9 +315,9 @@ namespace Persistence
                         if (relationship.Cascade.HasFlag(Cascade.SAVE) && dao is not null &&
                             !dao.Save(dao.Table, executor))
                             break;
-                        if (dao is not null && dao._NotLoaded) break;
-                        foreach (var (name, fk) in relationship.Links)
-                            fields.Add(name, obj is null ? null : fk.Prop.GetValue(obj));
+                        if (dao is not null && dao._NotLoaded || !LastChanges.Contains(column.Prop.Name)) break;
+                        foreach (var pair in relationship.Links)
+                            fields.Add(pair.Key, obj is null ? null : pair.Value.Prop.GetValue(obj));
                         break;
                     case OneToMany list:
                         if (!list.Cascade.HasFlag(Cascade.SAVE) || obj == null) break;
@@ -322,6 +336,7 @@ namespace Persistence
 
             if (!IsChanged && (fields.Count == 0 || !table.Versioned))
             {
+                later.Run();
                 return true;
             }
 
@@ -379,6 +394,20 @@ namespace Persistence
             }
 
             if (res == -1) return false;
+            var lastIdentifiers = LastKeys.ToDictionary(e => e.Key, e => e.Value);
+            var lastId = _id;
+            executor.OnRollback += () =>
+            {
+                if (table.DefaultPk && _id == 0)
+                {
+                    _id = lastId;
+                }
+
+                foreach (var id in lastIdentifiers)
+                {
+                    LastKeys[id.Key] = id.Value;
+                }
+            };
             UpdateIdentifiers(table, res);
             _NotLoaded = false;
             later.Run();
@@ -477,8 +506,8 @@ namespace Persistence
                         case Relationship _ when value == null:
                             continue;
                         case Relationship m2o:
-                            foreach (var (name, f) in m2o.Links)
-                                field.Add(name, f.Prop.GetValue(value));
+                            foreach (var pair in m2o.Links)
+                                field.Add(pair.Key, pair.Value.Prop.GetValue(value));
                             break;
                         case Field _:
                             field.Add(col.SqlName, value);
@@ -487,17 +516,79 @@ namespace Persistence
                 }
             }
 
-            var reader = Persistence.Sql.Select(table, field, 0, 1 << 31 - 1);
+            var reader = Persistence.Sql.Select(new SelectParameters(table) {Keys = field});
             var list = new PList<T>();
             ((IPList) list).BuildList(reader);
             return list;
         }
 
-        public static PList<T> FindWhereQuery<T>(string whereQuery) where T : DAO
+        public static PList<T> All<T>() where T : DAO
         {
-            return new PList<T>(whereQuery);
+            var list = new PList<T>();
+            list.GetAll();
+            return list;
         }
 
-        public PersistenceContext Context;
+        public DAO Clone(PersistenceContext context = null)
+        {
+            var map = new Dictionary<object, object>();
+            var copy = Activator.CreateInstance(GetType());
+            object value = null;
+            object copyObject;
+            map.Add(this, copy);
+            var queue = new Queue<object>();
+            queue.Enqueue(this);
+            while (queue.Count > 0)
+            {
+                var old = queue.Dequeue();
+                copy = map[old];
+                foreach (var propertyInfo in old.GetType().GetProperties())
+                {
+                    try
+                    {
+                        value = propertyInfo.GetValue(old);
+                        if (value is null || propertyInfo.PropertyType.IsSimpleType())
+                        {
+                            if (propertyInfo.GetSetMethod(false) is null) continue;
+                            propertyInfo.SetValue(copy, value);
+                        }
+                        else if (map.TryGetValue(value, out copyObject))
+                        {
+                            propertyInfo.SetValue(copy, copyObject);
+                        }
+                        else if (propertyInfo.PropertyType.GetInterfaces().Contains(typeof(IPList)))
+                        {
+                            var list = (IPList) value;
+                            var newValue = list.Clone(context);
+                            foreach (DAO o in list)
+                            {
+                                if (o is null)
+                                    newValue.Add(null);
+                                else if (map.TryGetValue(o, out var co))
+                                    newValue.Add(co);
+                            }
+
+                            propertyInfo.SetValue(copy, newValue);
+                        }
+                        else
+                        {
+                            copyObject = Activator.CreateInstance(value.GetType());
+                            propertyInfo.SetValue(copy, copyObject);
+                            map.Add(value, copyObject);
+                            queue.Enqueue(value);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine(propertyInfo.Name + " in " + copy.GetType().Name + " with " + value);
+                        Console.WriteLine(ex);
+                    }
+                }
+
+                if (copy is DAO dao) dao.Context = context;
+            }
+
+            return (DAO) map[this];
+        }
     }
 }

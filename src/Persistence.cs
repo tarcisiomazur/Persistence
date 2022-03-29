@@ -73,8 +73,10 @@ namespace Persistence
 
         private static void ProcessForeignKeys(Table table)
         {
-            foreach (var (name, relationship) in table.Relationships)
+            foreach (var pair in table.Relationships)
             {
+                var name = pair.Key;
+                var relationship = pair.Value;
                 var tablePkName = name;
                 if(relationship.Type != RelationshipType.Specialization)
                 {
@@ -189,6 +191,15 @@ namespace Persistence
                         if (string.IsNullOrEmpty(pk.FieldName))
                             pk.FieldName = pi.Name;
                         table.AddPrimaryKey(new PrimaryKey(pk) { Prop = pi });
+                        break;
+                    case UniqueIndexAttribute unique:
+                        if (string.IsNullOrEmpty(unique.FieldName))
+                            unique.FieldName = pi.Name;
+                        table.AddColumn(new UniqueIndex(unique)
+                        {
+                            Prop = pi,
+                            IsEnum = pi.PropertyType.IsEnum
+                        });
                         break;
                     case FieldAttribute field:
                         if (string.IsNullOrEmpty(field.FieldName))

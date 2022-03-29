@@ -149,16 +149,20 @@ namespace Persistence
                 return (T) dao;
             }
 
-            return null;
+            dao = Activator.CreateInstance<T>();
+            dao.Context = Context;
+            dao.Id = id;
+            _objects.TryAdd(new Keys(id), dao);
+            return dao.Load() ? (T) dao : null;
         }
         
 
         public void Clear()
         {
-            foreach (var (_, dao) in _objects)
+            foreach (var dao in _objects)
             {
-                dao.PropertyChanged -= DaoChanged;
-                dao.Context = null;
+                dao.Value.PropertyChanged -= DaoChanged;
+                dao.Value.Context = null;
             }
             _objects.Clear();
         }
@@ -176,7 +180,14 @@ namespace Persistence
             plist.GetWhereQuery(whereQuery);
             return plist;
         }
-        
+
+        public PList<T> GetAll()
+        {
+            var plist = new PList<T>();
+            plist.Context = Context;
+            plist.GetAll();
+            return plist;
+        }
     }
 /*
     public class DictionaryEqualityComparer<TKey, TValue> : IEqualityComparer<IDictionary<TKey, TValue>>

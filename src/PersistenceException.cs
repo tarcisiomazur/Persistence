@@ -3,14 +3,28 @@ using System.Runtime.Serialization;
 
 namespace Persistence
 {
-    public interface SQLException
+    public abstract class SQLException: Exception
     {
-        const int ErrorCodeVersion = 40001;
-        public int ErrorCode { get; set; }
+        public const int ErrorCodeVersion = 40001;
+        public abstract int ErrorCode { get; set; }
+
+        public SQLException() : base()
+        {
+        }
+
+        public SQLException(string message) : base(message)
+        {
+
+        }
+
+        public SQLException(string message, Exception inner) : base(message, inner)
+        {
+
+        }
     }
 
     [Serializable]
-    public class PersistenceException : Exception, SQLException
+    public class PersistenceException : Exception
     {
         public int ErrorCode { get; set; }
         

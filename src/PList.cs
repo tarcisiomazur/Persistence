@@ -1,10 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.ComponentModel;
-using System.Data;
-using System.Data.Common;
 using System.Linq;
 
 namespace Persistence
@@ -18,9 +15,9 @@ namespace Persistence
 
         public static void Do<T>(this IList<T> sequence, Action<T> action) where T:DAO
         {
-            for (var i = 0; i < sequence.Count; i++)
+            foreach (var t in sequence)
             {
-                
+                action(t);
             }
         }
 
@@ -28,14 +25,16 @@ namespace Persistence
 
     internal interface IPList: IList
     {
-        protected void SetKey(string key, object value);
-        protected Type GetMemberType();
-        protected internal void LoadList(OneToMany oneToMany, DAO obj);
+        public void SetKey(string key, object value);
+        public Type GetMemberType();
+        internal void LoadList(OneToMany oneToMany, DAO obj);
         internal void BuildList(IPReader reader);
         public bool Save();
         internal bool Save(WorkerExecutor executor);
         public bool Delete();
         public bool IsChanged { get; set; }
+
+        public IPList Clone(PersistenceContext context = null);
     }
     
     public sealed class PList<T> : BindingList<T>, IPList where T : DAO
@@ -47,7 +46,7 @@ namespace Persistence
         private List<T> _toDelete = new List<T>();
         private Table _table;
         private Type _type;
-        public PersistenceContext Context { get; set; }
+        public PersistenceContext? Context { get; set; }
         internal IStorage? _storage => Context?.GetStorage(_table);
 
         public bool IsChanged { get; set; }
@@ -257,6 +256,7 @@ namespace Persistence
                             runLater.Clear();
                         }
                     }
+                    instance.IsChanged = false;
                     Add((T) instance);
                 }
 
@@ -265,6 +265,7 @@ namespace Persistence
             }
             catch (Exception ex)
             {
+                reader.Close();
                 throw new PersistenceException("Error on Build List", ex);
             }
 
@@ -336,11 +337,13 @@ namespace Persistence
             _toDelete.Clear();
             if (_oneToMany == null || _root == null) return false;
             var whereClause = "";
-            foreach (var (key, field) in _oneToMany.Relationship.Links)
+            foreach (var pair in _oneToMany.Relationship.Links)
             {
-                whereClause += $"{key} = {field.Prop.GetValue(_root)}";
+                whereClause += $"{pair.Key} = {pair.Value.Prop.GetValue(_root)}";
             }
-            var reader = Persistence.Sql.SelectWhereQuery(_table, whereClause, first, length);
+
+            var param = new SelectParameters(_table) {Where = whereClause, Offset = first, Length = length};
+            var reader = Persistence.Sql.Select(param);
             ((IPList) this).BuildList(reader);
             return true;
         }
@@ -350,7 +353,7 @@ namespace Persistence
         {
             if(OrphanRemoval)
                 _toDelete.AddRange(this.Items);
-            foreach (var dao in this.ToImmutableArray().Where(dao => match(dao)))
+            foreach (var dao in this.ToArray().Where(dao => match(dao)))
             {
                 Remove(dao);
             }
@@ -358,7 +361,7 @@ namespace Persistence
 
         public bool DeleteAll()
         {
-            foreach (var dao in this.ToImmutableArray())
+            foreach (var dao in this.ToArray())
             {
                 Delete(dao);
             }
@@ -368,13 +371,30 @@ namespace Persistence
         public void GetWhereQuery(string whereQuery, uint offset = 0, uint length = 1 << 31 - 1)
         {
             _whereQuery = whereQuery;
-            var reader = Persistence.Sql.SelectWhereQuery(_table, whereQuery, offset, length);
+            var param = new SelectParameters(_table) {Where = _whereQuery, Offset = offset, Length = length};
+            var reader = Persistence.Sql.Select(param);
             ((IPList) this).BuildList(reader);
         }
         
         public static PList<T> FindWhereQuery(string whereQuery)
         {
             return new PList<T>(whereQuery);
+        }
+
+        public void GetAll()
+        {
+            var reader = Persistence.Sql.Select(new SelectParameters(_table));
+            ((IPList) this).BuildList(reader);
+        }
+        
+        IPList IPList.Clone(PersistenceContext context)
+        {
+            var copy = new PList<T>();
+            copy._root = _root;
+            copy._whereQuery = _whereQuery;
+            copy._oneToMany = _oneToMany;
+            copy.Context = context;
+            return copy;
         }
     }
 }

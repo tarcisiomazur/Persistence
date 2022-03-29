@@ -7,6 +7,7 @@ namespace Persistence
     {
         public IDbTransaction? DbTransaction { get; set; }
         public Action? OnCommit { get; set; }
+        public Action? OnRollback { get; set; }
 
         public bool Commit()
         {
@@ -28,6 +29,7 @@ namespace Persistence
             try
             {
                 DbTransaction.Rollback();
+                OnRollback?.Invoke();
             }
             catch(Exception ex)
             {

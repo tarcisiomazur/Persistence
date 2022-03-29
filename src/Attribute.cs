@@ -20,19 +20,19 @@ namespace Persistence
         public string Schema { get; set; } = Persistence.Sql.DefaultSchema;
     }
 
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
-    public class StoredProcedureAttribute : PersistenceAttribute
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+    public class NamedQuery : PersistenceAttribute
     {
-        public string ProcedureName { get; set; }
-        public ProcedureTypeCommand ProcedureType { get; set; }
-        public String[] ProcParams { get; set; }
-        
+        public string Name { get; set; }
+        public string Query { get; set; }
+        public Type ReturnType { get; set; }
+
     }
-    
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
+
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
     public class StoredFunctionAttribute : PersistenceAttribute
     {
-        public string FunctionnName { get; set; }
+        public string FunctionName { get; set; }
         public String[] ProcParams { get; set; }
     }
 
@@ -61,7 +61,8 @@ namespace Persistence
         public Fetch Fetch { get; set; }
         public Cascade Cascade { get; set; }
         public Nullable Nullable { get; set; }
-
+        public bool Updatable { get; set; }
+        
         public ManyToOneAttribute(string ReferencedName = null, Fetch Fetch = Fetch.Lazy, Cascade Cascade = Cascade.NULL)
         {
             this.ReferencedName = ReferencedName;
