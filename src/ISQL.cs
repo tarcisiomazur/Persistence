@@ -43,9 +43,9 @@ namespace Persistence
         bool ValidatePrimaryKeys(Table table, List<PrimaryKey> primaryKeys);
         bool ValidadeForeignKeys(Table table, Relationship relationship);
         string ConvertValueToString(object value);
-        long Insert(Table table, Dictionary<string, object> fields, ref IDbTransaction transaction);
+        long Insert(Table table, Dictionary<PropColumn, object> fields, ref IDbTransaction transaction);
 
-        long Update(Table table, Dictionary<string, object> fields,
+        long Update(Table table, Dictionary<PropColumn, object> fields,
             Dictionary<PropColumn, object> keys, ref IDbTransaction transaction);
         IPReader Select(SelectParameters param);
         bool Delete(Table table, Dictionary<string, object> keys, ref IDbTransaction dbTransaction);

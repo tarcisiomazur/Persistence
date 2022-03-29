@@ -290,7 +290,7 @@ namespace Persistence
             var later = new RunLater(executor);
             if (table.IsSpecialization && !Save(table.BaseTable, executor))
                 return false;
-            var fields = new Dictionary<string, object>();
+            var fields = new Dictionary<PropColumn, object>();
 
             foreach (var column in table.Columns)
             {
@@ -306,18 +306,22 @@ namespace Persistence
                         if (fa.IsEnum)
                             obj = (int) obj;
                         if (LastChanges.Contains(column.Prop.Name) || column is UniqueIndex)
-                            fields.Add(fa.SqlName, obj);
+                            fields.Add(fa, obj);
                         break;
                     case Relationship relationship:
                         var dao = (DAO) obj;
                         if (obj == null && relationship.Nullable == Nullable.NotNull)
                             throw new PersistenceException($"Property value {relationship.Prop} cannot be null");
+                        if (LastChanges.Contains(column.Prop.Name))
+                        {
+                            foreach (var pair in relationship.Links)
+                                fields.Add(pair.Value, obj is null ? null : pair.Value.Prop.GetValue(obj));
+                        }
+
                         if (relationship.Cascade.HasFlag(Cascade.SAVE) && dao is not null &&
                             !dao.Save(dao.Table, executor))
-                            break;
-                        if (dao is not null && dao._NotLoaded || !LastChanges.Contains(column.Prop.Name)) break;
-                        foreach (var pair in relationship.Links)
-                            fields.Add(pair.Key, obj is null ? null : pair.Value.Prop.GetValue(obj));
+                            return false;
+                        
                         break;
                     case OneToMany list:
                         if (!list.Cascade.HasFlag(Cascade.SAVE) || obj == null) break;
@@ -339,9 +343,10 @@ namespace Persistence
                 later.Run();
                 return true;
             }
-
-            if (table.Versioned)
-                fields.Add("__Version", _Version);
+            
+            // TODO implement version control
+            //if (table.Versioned)
+            //    fields.Add("__Version", _Version);
 
             var keyChange = false;
             var keyValues = new Dictionary<PropColumn, object>();
@@ -363,7 +368,7 @@ namespace Persistence
                     keyChange = true;
                 }
 
-                fields.Add(column.SqlName, obj);
+                fields.Add(column, obj);
             }
 
             long res;

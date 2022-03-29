@@ -61,7 +61,8 @@ namespace Persistence
         public Fetch Fetch { get; set; }
         public Cascade Cascade { get; set; }
         public Nullable Nullable { get; set; }
-        public bool Updatable { get; set; }
+
+        public bool Updatable { get; set; } = true;
         
         public ManyToOneAttribute(string ReferencedName = null, Fetch Fetch = Fetch.Lazy, Cascade Cascade = Cascade.NULL)
         {

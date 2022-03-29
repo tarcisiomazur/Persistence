@@ -9,8 +9,8 @@ namespace Persistence
         public RelationshipType Type { get; set; }
         public string FkName => GetFkName();
         public Cascade Cascade { get; }
-        
-        public bool Updatable { get; set; }
+
+        public bool Updatable { get; set; } = true;
         public Fetch Fetch { get; }
         public FkOptions OnDelete { get; }
         public FkOptions OnUpdate { get; }
@@ -45,9 +45,13 @@ namespace Persistence
 
         }
 
-        public void AddKey(Field field)
+        public void AddKey(PrimaryKey field)
         {
-            Links.Add($"{TableReferenced.SqlName}_{field.SqlName}", field);
+            Links.Add($"{TableReferenced.SqlName}_{field.SqlName}", new Field(field)
+            {
+                SqlName = $"{TableReferenced.SqlName}_{field.SqlName}",
+                Updatable = Updatable
+            });
         }
     }
 }
