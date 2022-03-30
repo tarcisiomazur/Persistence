@@ -241,6 +241,7 @@ namespace Persistence
         void IPList.BuildList(IPReader reader)
         {
             Clear();
+            IsChanged = false;
             try
             {
                 var runLater = new RunLater(null);
@@ -268,6 +269,7 @@ namespace Persistence
                 reader.Close();
                 throw new PersistenceException("Error on Build List", ex);
             }
+            IsChanged = false;
 
         }
 

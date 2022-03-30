@@ -191,6 +191,7 @@ namespace Persistence
                             value = reader.DataReader.Read(pair.Key);
                             if (value == null)
                             {
+                                rel.Prop.SetValue(this, null);
                                 isNull = true;
                                 break;
                             }
@@ -327,10 +328,13 @@ namespace Persistence
                         if (!list.Cascade.HasFlag(Cascade.SAVE) || obj == null) break;
                         var l = obj as IPList;
                         if (!l.IsChanged) break;
+                        var lProp = list.Relationship.Prop;
                         foreach (var o in l)
                         {
-                            if (o != null)
-                                list.Relationship.Prop.SetValue(o, this);
+                            if (o == null)
+                                continue;
+                            if(lProp.GetValue(o) != this)
+                                lProp.SetValue(o, this);
                         }
 
                         later.Later((e) => l.Save(e));
